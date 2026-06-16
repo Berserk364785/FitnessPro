@@ -22,7 +22,7 @@
 //    create policy "Public update" on leaders for update using (true);
 // 3. Вставьте URL и anon key ниже.
 
-const SUPABASE_URL='';      // например: 'https://xxxx.supabase.co'
+const SUPABASE_URL='https://nzyqiguqxqtfqjbnjbur.supabase.co/rest/v1/';      // например: 'https://xxxx.supabase.co'
 const SUPABASE_ANON_KEY=''; // публичный anon key (безопасно хранить в клиенте)
 
 const CLOUD_ENABLED=!!(SUPABASE_URL&&SUPABASE_ANON_KEY);
