@@ -23,7 +23,7 @@
 // 3. Вставьте URL и anon key ниже.
 
 const SUPABASE_URL='https://nzyqiguqxqtfqjbnjbur.supabase.co/rest/v1/';      // например: 'https://xxxx.supabase.co'
-const SUPABASE_ANON_KEY='sb_publishable_8Zo9M44RA0ggtPGl8ESCZg_Fu6lMQUA'; // публичный anon key (безопасно хранить в клиенте)
+const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im56eXFpZ3VxeHF0ZnFqYm5qYnVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NjEwODQsImV4cCI6MjA5NzEzNzA4NH0.gz20Za20W_ZyBNBqe5PAcA0Ky8BZD4_Xzd9FhqmC-dk'; // публичный anon key (безопасно хранить в клиенте)
 
 const CLOUD_ENABLED=!!(SUPABASE_URL&&SUPABASE_ANON_KEY);
 
