@@ -805,7 +805,7 @@ function setTheme(t){document.body.className=`theme-${t}`;localStorage.setItem('
 // ============================================================
 //  HINTS / TIPS
 // ============================================================
-const HINTS={pushup:'💡 Упор лёжа, камера сбоку. Локти сгибайте до 90°.',squat:'💡 Боком к камере, ноги шире плеч. Колени до 90°, спина прямая.',plank:'💡 На предплечьях, тело прямое. Камера сбоку.',situp:'💡 Лёжа, колени согнуты. Корпус до 45°.',lunge:'💡 Боком, шаг вперёд, колено 90°.',burpee:'💡 Присед → упор → отжимание → прыжок.',pullup:'💡 Перекладина. Камера сбоку.'};
+const HINTS={pushup:'💡 Упор лёжа, камера сбоку. Локти сгибайте до 90°.',squat:'💡 Боком к камере, ноги шире плеч. Колени до 90°, спина прямая.',plank:'💡 На предплечьях, тело прямое. Камера сбоку.',situp:'💡 Лёжа, колени согнуты. Корпус до 45°.',lunge:'💡 Боком, шаг вперёд, колено 90°.',burpee:'💡 Присед → упор → отжимание → прыжок.',pullup:'💡 Перекладина, камера сбоку (не сзади) — так AI точнее видит сгибание локтя.'};
 
 // Голосовые инструкции по установке камеры — проигрываются один раз перед стартом обратного отсчёта
 const CAMERA_VOICE_HINTS={
@@ -815,7 +815,7 @@ const CAMERA_VOICE_HINTS={
   situp:'Поставьте телефон сбоку на уровне пола, чтобы видеть корпус и ноги в профиль',
   lunge:'Поставьте телефон сбоку, на расстоянии двух метров, чтобы видеть ноги в профиль во время выпада',
   burpee:'Поставьте телефон сбоку на расстоянии двух-трёх метров, чтобы видеть всё тело при движении вниз и вверх',
-  pullup:'Поставьте телефон сбоку от турника так, чтобы видеть вас целиком от рук до ног'
+  pullup:'Поставьте телефон сбоку от турника, не сзади — так искусственный интеллект точнее видит сгибание локтя и считает повторения'
 };
 let cameraHintGivenFor={}; // чтобы не повторять подсказку при каждом старте подряд, только при смене упражнения
 let alwaysHintCamera=false; // если включено в настройках — проговаривать инструкцию по камере перед каждым стартом
@@ -850,13 +850,14 @@ function startVoice(){
 // ============================================================
 //  SHARE
 // ============================================================
+const APP_URL='https://berserk364785.github.io/FitPulse/';
 function updateSharePreview(){
   const el=q('sharePreview');if(!el)return;
-  el.textContent=`🏆 FitPulse\nУровень ${lvl} · ${xp}/${lvl*100} XP\n💪 Всего повторений: ${totalVolume}\n🔥 Калорий: ${Math.floor(caloriesBurned)}\n⚡ Макс. серия: ${maxStreak}`;
+  el.textContent=`🏆 FitPulse\nУровень ${lvl} · ${xp}/${lvl*100} XP\n💪 Всего повторений: ${totalVolume}\n🔥 Калорий: ${Math.floor(caloriesBurned)}\n⚡ Макс. серия: ${maxStreak}\n\nЗаходи, попробуй сам 👉 ${APP_URL}`;
 }
 function shareResult(){
   const txt=q('sharePreview')?.textContent||'FitPulse';
-  if(navigator.share)navigator.share({title:'FitPulse',text:txt});
+  if(navigator.share)navigator.share({title:'FitPulse',text:txt,url:APP_URL});
   else{navigator.clipboard?.writeText(txt);toast('Скопировано!');}
 }
 
@@ -1058,6 +1059,41 @@ function runTechniqueCoach(lm,sa,dT,uT){
 }
 
 function toggleQuest(id){document.getElementById(id)?.classList.toggle('collapsed');}
+
+// ============================================================
+//  CHANGELOG — «Что нового» после обновлений
+// ============================================================
+// Чтобы анонсировать новую версию: подними CURRENT_VERSION на 1 и добавь
+// запись в начало CHANGELOG (новые сверху). Модалка покажется автоматически
+// один раз тем, у кого в localStorage записана более старая версия —
+// включая существующих пользователей, которые ещё не видели апдейт.
+const CURRENT_VERSION=1;
+const CHANGELOG=[
+  {v:1,date:'Июнь 2026',items:[
+    'Запуск FitPulse: AI-анализ техники через камеру в реальном времени',
+    'Голосовой коуч с подсказками по технике для 7 упражнений',
+    'Система уровней и опыта, личные рекорды, достижения',
+    'Онлайн-рейтинг — соревнуйтесь с другими пользователями',
+    'Программы тренировок и HIIT-таймер',
+    'Раздел обратной связи — делитесь идеями и отзывами',
+  ]},
+];
+function checkChangelog(){
+  const seen=parseInt(localStorage.getItem('fp_changelog_seen')||'0');
+  if(seen>=CURRENT_VERSION)return;
+  const body=q('changelogBody');
+  if(body){
+    body.innerHTML=CHANGELOG.map(c=>`<div class="changelog-item"><div class="changelog-version">v${c.v} · ${c.date}</div><ul class="changelog-list">${c.items.map(i=>`<li>${i}</li>`).join('')}</ul></div>`).join('');
+  }
+  // Не показываем поверх онбординга новым пользователям — у них и так открыт экран приветствия
+  if(!localStorage.getItem('fp_onboarded')){
+    localStorage.setItem('fp_changelog_seen',String(CURRENT_VERSION));
+    return;
+  }
+  openModal('changelogModal');
+  localStorage.setItem('fp_changelog_seen',String(CURRENT_VERSION));
+}
+
 function registerSW(){
   if(!('serviceWorker' in navigator))return;
   navigator.serviceWorker.register('./sw.js').then(reg=>{
@@ -1100,9 +1136,12 @@ window.onload=()=>{
 
   // Onboarding
   if(!localStorage.getItem('fp_onboarded')){q('onboardOv').classList.add('visible');}
-  q('onboardBtn')?.addEventListener('click',()=>{q('onboardOv').classList.remove('visible');localStorage.setItem('fp_onboarded','1');});
-  q('replayOnboardBtn')?.addEventListener('click',()=>{closeModal('settingsModal');q('onboardOv').classList.add('visible');});
-  q('openFaqBtn')?.addEventListener('click',()=>{closeModal('settingsModal');openModal('faqModal');});
+  q('onboardBtn')?.addEventListener('click',()=>{q('onboardOv').classList.remove('visible');localStorage.setItem('fp_onboarded','1');checkChangelog();});
+  q('replayOnboardBtn')?.addEventListener('click',()=>{closeModal('faqModalWrap');q('onboardOv').classList.add('visible');});
+
+  // Показываем «Что нового» существующим пользователям (у новых уже открыт онбординг,
+  // им покажем changelog сразу после того, как они его закроют — см. onboardBtn выше)
+  if(localStorage.getItem('fp_onboarded'))checkChangelog();
 
   // Tabs
   document.querySelectorAll('.tab-btn').forEach(b=>b.addEventListener('click',()=>openTab(b.dataset.tab)));
@@ -1111,10 +1150,21 @@ window.onload=()=>{
   document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeModal(b.dataset.close));
   document.querySelectorAll('.modal-ov').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
 
-  // Header buttons
-  q('settingsBtn')?.addEventListener('click',()=>openModal('settingsModal'));
+  // Header buttons — кнопка ⚙️ теперь открывает меню-хаб с тремя пунктами,
+  // а не сразу технические настройки
+  q('settingsBtn')?.addEventListener('click',()=>openModal('menuHubModal'));
   q('themeBtn')?.addEventListener('click',()=>openModal('themeModal'));
   q('shareBtn')?.addEventListener('click',shareResult);
+
+  // Меню-хаб: переход в конкретный раздел
+  q('hubSettingsBtn')?.addEventListener('click',()=>{closeModal('menuHubModal');openModal('settingsModal');});
+  q('hubFaqBtn')?.addEventListener('click',()=>{closeModal('menuHubModal');openModal('faqModalWrap');});
+  q('hubFeedbackBtn')?.addEventListener('click',()=>{closeModal('menuHubModal');openModal('feedbackModal');});
+
+  // Кнопки «← Назад» возвращают в меню-хаб вместо простого закрытия
+  q('settingsBackBtn')?.addEventListener('click',()=>{closeModal('settingsModal');openModal('menuHubModal');});
+  q('faqBackBtn')?.addEventListener('click',()=>{closeModal('faqModalWrap');openModal('menuHubModal');});
+  q('feedbackBackBtn')?.addEventListener('click',()=>{closeModal('feedbackModal');openModal('menuHubModal');});
 
   // Exercise presets
   document.querySelectorAll('.preset-btn').forEach(b=>{
@@ -1219,6 +1269,34 @@ window.onload=()=>{
     // Перезагружаем страницу — теперь браузер загрузит всё заново с сервера
     location.reload(true);
   });
+
+  // Обратная связь — звёзды рейтинга
+  let feedbackRating=0;
+  const starEls=document.querySelectorAll('#feedbackStars span');
+  starEls.forEach(s=>s.addEventListener('click',()=>{
+    feedbackRating=parseInt(s.dataset.star);
+    starEls.forEach(x=>x.classList.toggle('active',parseInt(x.dataset.star)<=feedbackRating));
+  }));
+  q('sendFeedbackBtn')?.addEventListener('click',async()=>{
+    const text=q('feedbackText')?.value.trim();
+    if(!text){toast('Напишите хотя бы пару слов 🙂');return;}
+    if(!CLOUD_ENABLED){toast('⚠️ Облако не настроено, отзыв не отправлен');return;}
+    const btn=q('sendFeedbackBtn');
+    if(btn){btn.disabled=true;btn.textContent='Отправка...';}
+    const ok=await cloudSendFeedback({rating:feedbackRating,message:text},e=>toast('❌ Не получилось: '+e.message,4000));
+    if(btn){btn.disabled=false;btn.textContent='📨 Отправить отзыв';}
+    if(ok){
+      toast('✅ Спасибо за отзыв!');
+      q('feedbackText').value='';
+      feedbackRating=0;
+      starEls.forEach(x=>x.classList.remove('active'));
+      closeModal('feedbackModal');
+    }
+  });
+  // Почта проекта — впишите свой адрес один раз
+  const CONTACT_EMAIL='fitpulsesupport3@gmail.com';
+  const emailBtn=q('contactEmailBtn');
+  if(emailBtn)emailBtn.href=`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('FitPulse — идея/вопрос')}`;
 
   // Video file
   q('videoFile')?.addEventListener('change',e=>{

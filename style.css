@@ -251,12 +251,23 @@ body::after{width:500px;height:500px;background:radial-gradient(circle,rgba(168,
 .faq-item:last-child{border:none;margin-bottom:0;padding-bottom:0;}
 .faq-q{font-weight:700;font-size:.88rem;margin-bottom:5px;}
 .faq-a{font-size:.82rem;color:var(--text2);line-height:1.55;}
+.feedback-stars{display:flex;gap:4px;font-size:1.5rem;}
+.feedback-stars span{cursor:pointer;opacity:.3;transition:.15s;-webkit-tap-highlight-color:transparent;}
+.feedback-stars span.active{opacity:1;}
+.changelog-version{font-size:.76rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;}
+.changelog-item{padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--border);}
+.changelog-item:last-child{border:none;margin-bottom:0;padding-bottom:0;}
+.changelog-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px;}
+.changelog-list li{font-size:.84rem;color:var(--text2);line-height:1.5;padding-left:18px;position:relative;}
+.changelog-list li::before{content:'✦';position:absolute;left:0;color:var(--primary);}
 .field-row label{color:var(--text2);}
 .inp{padding:8px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:.88rem;width:100px;text-align:center;}
 .inp:focus{outline:none;border-color:var(--primary);}
 .m-btn{padding:11px 16px;border-radius:var(--radius-sm);border:none;background:linear-gradient(135deg,var(--primary),var(--secondary));color:#fff;font-weight:700;font-size:.88rem;cursor:pointer;transition:.15s;text-align:center;}
 .m-btn:hover{opacity:.9;transform:scale(1.01);}
 .m-btn.ghost{background:var(--card2);border:1px solid var(--border);color:var(--text);}
+.menu-hub-item{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;padding:13px 14px;}
+.menu-hub-sub{font-size:.72rem;font-weight:400;color:var(--text2);}
 .m-btn.danger{background:linear-gradient(135deg,#ef4444,#dc2626);}
 .theme-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
 .th-btn{border-radius:var(--radius-sm);border:2px solid var(--border);padding:10px 6px;cursor:pointer;font-size:.78rem;font-weight:600;transition:all .2s;text-align:center;background:var(--card2);color:var(--text);}
