@@ -540,10 +540,24 @@ function countdown(cb){
     runVisualCountdown();
   }
 }
+// Гарантированно останавливает любой активный источник (камеру ИЛИ видео) перед стартом
+// нового. Это последний рубеж защиты: даже если пользователь попадёт в startCam/startVid
+// не через кнопки переключения режима (например через голосовую команду «старт» или
+// горячую клавишу Space), нельзя допустить одновременной работы двух источников.
+function stopActiveSource(){
+  if(cam){try{cam.stop();}catch(e){}cam=null;}
+  const vidEl=q('video');
+  if(vidEl&&vidEl.srcObject){
+    try{vidEl.srcObject.getTracks().forEach(t=>t.stop());}catch(e){}
+    vidEl.srcObject=null;
+  }
+  q('vidUp').pause();
+  if(frameId){cancelAnimationFrame(frameId);frameId=null;}
+}
 async function startCam(){
   try{
     await loadMP();
-    if(cam){try{await cam.stop();}catch(e){}cam=null;}
+    stopActiveSource();
     q('debugLine').textContent='Инициализация...';
     const myGen=++sessionGen; // эпоха текущего запуска — отсекает кадры от прошлых сессий
     ensurePose();
@@ -557,14 +571,35 @@ async function startCam(){
   }catch(e){toast('⚠️ '+e.message,5000);q('debugLine').textContent='Ошибка: '+e.message;}
 }
 async function startVid(){
-  const vu=q('vidUp');if(!vu.src){toast('Выберите видео');return;}
+  const vu=q('vidUp');if(!vu.src){toast('Выберите видео — нажмите «📁 Загрузить»',3500);return;}
   try{
     await loadMP();
-    if(frameId)cancelAnimationFrame(frameId);
+    stopActiveSource();
     const myGen=++sessionGen;
     ensurePose();
     pose.onResults(res=>{if(myGen===sessionGen)onResults(res);});
-    vu.play();isRunning=true;isPaused=false;setCtrl(true);startSes();
+    // Ждём, пока видео реально готово к воспроизведению (метаданные + хотя бы первый кадр).
+    // Без этого play() может тихо упасть, если пользователь нажал «Старт» сразу после
+    // выбора файла, пока браузер ещё декодирует видео.
+    if(vu.readyState<2){
+      toast('⏳ Подготовка видео...');
+      await new Promise((res,rej)=>{
+        const onReady=()=>{vu.removeEventListener('loadeddata',onReady);vu.removeEventListener('error',onErr);res();};
+        const onErr=()=>{vu.removeEventListener('loadeddata',onReady);vu.removeEventListener('error',onErr);rej(new Error('Не удалось прочитать видеофайл'));};
+        vu.addEventListener('loadeddata',onReady);
+        vu.addEventListener('error',onErr);
+        setTimeout(()=>{vu.removeEventListener('loadeddata',onReady);vu.removeEventListener('error',onErr);rej(new Error('Видео загружается слишком долго'));},10000);
+      });
+    }
+    // play() возвращает Promise, который может реджектиться (политики автовоспроизведения,
+    // видео ещё не готово) — раньше ошибка не обрабатывалась, из-за чего vu.paused оставался
+    // true навсегда и цикл анализа ниже никогда не запускался молча.
+    try{
+      await vu.play();
+    }catch(playErr){
+      throw new Error('Не удалось запустить воспроизведение видео. Попробуйте выбрать файл ещё раз.');
+    }
+    isRunning=true;isPaused=false;setCtrl(true);startSes();
     const p=()=>{if(myGen!==sessionGen)return;if(isRunning&&!isPaused&&!vu.paused&&pose&&vu.readyState>=2)pose.send({image:vu}).catch(()=>{});frameId=requestAnimationFrame(p);};p();
     const setSz=()=>{if(vu.videoWidth){const cv=q('canvas');cv.width=vu.videoWidth;cv.height=vu.videoHeight;}else requestAnimationFrame(setSz);};setSz();
     toast('🎥 Анализ видео');hintFor(currentEx);
@@ -573,16 +608,7 @@ async function startVid(){
 function stopAll(){
   sessionGen++; // мгновенно делает невалидными все кадры, которые уже летят от предыдущей камеры/видео
   isRunning=false;isPaused=false;stopSes();
-  if(cam){try{cam.stop();}catch(e){}cam=null;}
-  // Явно останавливаем все треки видеопотока — Camera.stop() сам это не всегда делает надёжно,
-  // и индикатор камеры/поток может оставаться активным, особенно на мобильных браузерах.
-  const vidEl=q('video');
-  if(vidEl&&vidEl.srcObject){
-    try{vidEl.srcObject.getTracks().forEach(t=>t.stop());}catch(e){}
-    vidEl.srcObject=null;
-  }
-  q('vidUp').pause();
-  if(frameId){cancelAnimationFrame(frameId);frameId=null;}
+  stopActiveSource(); // останавливает камеру/видео и их треки единообразно с startCam/startVid
   // ВАЖНО: мы больше НЕ вызываем pose.close() здесь. На мобильных браузерах повторные
   // close()+new Pose() быстро истощают лимит WebGL-контекстов, из-за чего после нескольких
   // циклов Старт→Стоп MediaPipe тихо перестаёт вызывать onResults — камера показывает картинку,
@@ -844,85 +870,121 @@ function shareResult(){
 const DEMO_SVG={
   pushup:`<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
     <rect width="200" height="200" fill="#0d0a1a"/>
-    <style>
-      .stick{stroke:#a855f7;stroke-width:3;stroke-linecap:round;fill:none;}
-      .head{fill:#a855f7;}
-      .floor{stroke:#444;stroke-width:2;}
-      .label{fill:#c4b5fd;font-family:sans-serif;font-size:11px;text-anchor:middle;}
-      @keyframes pushup{0%,100%{transform:translateY(0px)}50%{transform:translateY(-22px)}}
-      .body{animation:pushup 1.8s ease-in-out infinite;}
-    </style>
-    <line class="floor" x1="20" y1="160" x2="180" y2="160"/>
-    <g class="body">
-      <circle class="head" cx="155" cy="120" r="10"/>
-      <line class="stick" x1="145" y1="120" x2="60" y2="120"/>
-      <line class="stick" x1="130" y1="120" x2="130" y2="155"/>
-      <line class="stick" x1="80" y1="120" x2="80" y2="155"/>
-      <line class="stick" x1="60" y1="120" x2="45" y2="155"/>
-      <line class="stick" x1="60" y1="120" x2="55" y2="155"/>
-    </g>
-    <text class="label" x="100" y="185">Опускайтесь до угла 90°</text>
+    <style>.stick{stroke:#a855f7;stroke-width:4;stroke-linecap:round;fill:none;}.head{fill:#a855f7;}.floor{stroke:#444;stroke-width:2;}.label{fill:#c4b5fd;font-family:sans-serif;font-size:11px;text-anchor:middle;}</style>
+    <line class="floor" x1="20" y1="158" x2="180" y2="158"/>
+    <!-- Голова покачивается вместе с плечом (тело почти не двигается, только руки сгибаются) -->
+    <circle class="head" cx="155" cy="118" r="10">
+      <animate attributeName="cy" values="118;128;118" dur="1.6s" repeatCount="indefinite"/>
+      <animate attributeName="cx" values="155;150;155" dur="1.6s" repeatCount="indefinite"/>
+    </circle>
+    <!-- Спина — почти прямая линия плечо-таз -->
+    <line class="stick" x1="145" y1="120" x2="60" y2="120">
+      <animate attributeName="x1" values="145;140;145" dur="1.6s" repeatCount="indefinite"/>
+      <animate attributeName="y1" values="120;128;120" dur="1.6s" repeatCount="indefinite"/>
+    </line>
+    <!-- Правая рука: плечо→локоть→кисть, локоть реально сгибается -->
+    <line class="stick" x1="140" y1="122" x2="130" y2="138">
+      <animate attributeName="x1" values="140;136;140" dur="1.6s" repeatCount="indefinite"/>
+      <animate attributeName="y1" values="122;130;122" dur="1.6s" repeatCount="indefinite"/>
+      <animate attributeName="x2" values="130;145;130" dur="1.6s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="138;128;138" dur="1.6s" repeatCount="indefinite"/>
+    </line>
+    <line class="stick" x1="130" y1="138" x2="130" y2="156">
+      <animate attributeName="x1" values="130;145;130" dur="1.6s" repeatCount="indefinite"/>
+      <animate attributeName="y1" values="138;128;138" dur="1.6s" repeatCount="indefinite"/>
+    </line>
+    <!-- Левая рука -->
+    <line class="stick" x1="85" y1="122" x2="80" y2="138">
+      <animate attributeName="y1" values="122;130;122" dur="1.6s" repeatCount="indefinite"/>
+      <animate attributeName="x2" values="80;95;80" dur="1.6s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="138;128;138" dur="1.6s" repeatCount="indefinite"/>
+    </line>
+    <line class="stick" x1="80" y1="138" x2="80" y2="156">
+      <animate attributeName="x1" values="80;95;80" dur="1.6s" repeatCount="indefinite"/>
+      <animate attributeName="y1" values="138;128;138" dur="1.6s" repeatCount="indefinite"/>
+    </line>
+    <!-- Ноги статичны -->
+    <line class="stick" x1="60" y1="120" x2="45" y2="155"/>
+    <line class="stick" x1="60" y1="120" x2="55" y2="155"/>
+    <text class="label" x="100" y="185">Опускайтесь до угла 90° в локтях</text>
   </svg>`,
 
   squat:`<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
     <rect width="200" height="200" fill="#0d0a1a"/>
-    <style>
-      .stick{stroke:#a855f7;stroke-width:3;stroke-linecap:round;fill:none;}
-      .head{fill:#a855f7;}
-      .floor{stroke:#444;stroke-width:2;}
-      .label{fill:#c4b5fd;font-family:sans-serif;font-size:11px;text-anchor:middle;}
-      @keyframes squat{0%,100%{transform:none}50%{transform:translateY(28px) scaleY(0.72)}}
-      .body{animation:squat 2s ease-in-out infinite;transform-origin:100px 155px;}
-    </style>
-    <line class="floor" x1="20" y1="170" x2="180" y2="170"/>
-    <g class="body">
-      <circle class="head" cx="100" cy="55" r="12"/>
-      <line class="stick" x1="100" y1="67" x2="100" y2="115"/>
-      <line class="stick" x1="100" y1="80" x2="125" y2="95"/>
-      <line class="stick" x1="100" y1="80" x2="75" y2="95"/>
-      <line class="stick" x1="100" y1="115" x2="80" y2="130"/>
-      <line class="stick" x1="100" y1="115" x2="120" y2="130"/>
-      <line class="stick" x1="80" y1="130" x2="75" y2="162"/>
-      <line class="stick" x1="120" y1="130" x2="125" y2="162"/>
-    </g>
+    <style>.stick{stroke:#a855f7;stroke-width:4;stroke-linecap:round;fill:none;}.head{fill:#a855f7;}.floor{stroke:#444;stroke-width:2;}.label{fill:#c4b5fd;font-family:sans-serif;font-size:11px;text-anchor:middle;}</style>
+    <line class="floor" x1="20" y1="172" x2="180" y2="172"/>
+    <circle class="head" cx="100" cy="52" r="12">
+      <animate attributeName="cy" values="52;92;52" dur="2s" repeatCount="indefinite"/>
+    </circle>
+    <!-- Корпус (плечо-таз) -->
+    <line class="stick" x1="100" y1="64" x2="100" y2="112">
+      <animate attributeName="y1" values="64;104;64" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="112;132;112" dur="2s" repeatCount="indefinite"/>
+    </line>
+    <!-- Руки тянутся вперёд при приседе -->
+    <line class="stick" x1="100" y1="78" x2="128" y2="92">
+      <animate attributeName="y1" values="78;110;78" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="x2" values="128;150;128" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="92;108;92" dur="2s" repeatCount="indefinite"/>
+    </line>
+    <line class="stick" x1="100" y1="78" x2="72" y2="92">
+      <animate attributeName="y1" values="78;110;78" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="x2" values="72;50;72" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="92;108;92" dur="2s" repeatCount="indefinite"/>
+    </line>
+    <!-- Бедро: таз→колено, угол реально меняется -->
+    <line class="stick" x1="100" y1="112" x2="80" y2="128">
+      <animate attributeName="y1" values="112;132;112" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="x2" values="80;72;80" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="128;145;128" dur="2s" repeatCount="indefinite"/>
+    </line>
+    <line class="stick" x1="100" y1="112" x2="120" y2="128">
+      <animate attributeName="y1" values="112;132;112" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="x2" values="120;128;120" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="128;145;128" dur="2s" repeatCount="indefinite"/>
+    </line>
+    <!-- Голень: колено→стопа, тоже сгибается -->
+    <line class="stick" x1="80" y1="128" x2="75" y2="164">
+      <animate attributeName="x1" values="80;72;80" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="y1" values="128;145;128" dur="2s" repeatCount="indefinite"/>
+    </line>
+    <line class="stick" x1="120" y1="128" x2="125" y2="164">
+      <animate attributeName="x1" values="120;128;120" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="y1" values="128;145;128" dur="2s" repeatCount="indefinite"/>
+    </line>
     <text class="label" x="100" y="188">Колени над носками, спина прямо</text>
   </svg>`,
 
   plank:`<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
     <rect width="200" height="200" fill="#0d0a1a"/>
-    <style>
-      .stick{stroke:#a855f7;stroke-width:3;stroke-linecap:round;fill:none;}
-      .head{fill:#a855f7;}
-      .floor{stroke:#444;stroke-width:2;}
-      .label{fill:#c4b5fd;font-family:sans-serif;font-size:11px;text-anchor:middle;}
-    </style>
+    <style>.stick{stroke:#a855f7;stroke-width:4;stroke-linecap:round;fill:none;}.head{fill:#a855f7;}.floor{stroke:#444;stroke-width:2;}.label{fill:#c4b5fd;font-family:sans-serif;font-size:11px;text-anchor:middle;}</style>
     <line class="floor" x1="20" y1="155" x2="180" y2="155"/>
-    <circle class="head" cx="155" cy="116" r="10"/>
-    <line class="stick" x1="145" y1="118" x2="60" y2="128"/>
-    <line class="stick" x1="128" y1="122" x2="125" y2="152"/>
-    <line class="stick" x1="90" y1="125" x2="85" y2="152"/>
-    <line class="stick" x1="60" y1="128" x2="42" y2="150"/>
-    <line class="stick" x1="60" y1="128" x2="52" y2="152"/>
-    <line stroke="#4ade80" stroke-width="1.5" stroke-dasharray="4,3" x1="155" y1="118" x2="42" y2="150" opacity="0.5"/>
+    <!-- Лёгкое дрожание корпуса (мышечное напряжение в статике) -->
+    <g>
+      <animateTransform attributeName="transform" type="translate" values="0,0;0,-2;0,1;0,0" dur="2.5s" repeatCount="indefinite"/>
+      <circle class="head" cx="155" cy="116" r="10"/>
+      <line class="stick" x1="145" y1="118" x2="60" y2="128"/>
+      <line class="stick" x1="128" y1="122" x2="125" y2="152"/>
+      <line class="stick" x1="90" y1="125" x2="85" y2="152"/>
+      <line class="stick" x1="60" y1="128" x2="42" y2="150"/>
+      <line class="stick" x1="60" y1="128" x2="52" y2="152"/>
+      <line stroke="#4ade80" stroke-width="1.5" stroke-dasharray="4,3" x1="155" y1="118" x2="42" y2="150" opacity="0.5"/>
+    </g>
     <text class="label" x="100" y="180">Тело прямое как доска</text>
   </svg>`,
 
   situp:`<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
     <rect width="200" height="200" fill="#0d0a1a"/>
-    <style>
-      .stick{stroke:#a855f7;stroke-width:3;stroke-linecap:round;fill:none;}
-      .head{fill:#a855f7;}
-      .floor{stroke:#444;stroke-width:2;}
-      .label{fill:#c4b5fd;font-family:sans-serif;font-size:11px;text-anchor:middle;}
-      @keyframes situp{0%,100%{transform:rotate(0deg)}45%,55%{transform:rotate(-68deg)}}
-      .upper{animation:situp 2.2s ease-in-out infinite;transform-origin:100px 132px;}
-    </style>
+    <style>.stick{stroke:#a855f7;stroke-width:4;stroke-linecap:round;fill:none;}.head{fill:#a855f7;}.floor{stroke:#444;stroke-width:2;}.label{fill:#c4b5fd;font-family:sans-serif;font-size:11px;text-anchor:middle;}</style>
     <line class="floor" x1="20" y1="155" x2="180" y2="155"/>
+    <!-- Ноги согнуты, статичны -->
     <line class="stick" x1="100" y1="132" x2="75" y2="115"/>
     <line class="stick" x1="75" y1="115" x2="65" y2="140"/>
     <line class="stick" x1="100" y1="132" x2="125" y2="115"/>
     <line class="stick" x1="125" y1="115" x2="135" y2="140"/>
-    <g class="upper">
+    <!-- Корпус вращается вокруг таза, реально сгибаясь в бёдрах -->
+    <g>
+      <animateTransform attributeName="transform" type="rotate" values="0 100 132;-70 100 132;0 100 132" dur="2.2s" repeatCount="indefinite"/>
       <line class="stick" x1="100" y1="132" x2="100" y2="90"/>
       <line class="stick" x1="100" y1="100" x2="82" y2="112"/>
       <line class="stick" x1="100" y1="100" x2="118" y2="112"/>
@@ -933,79 +995,112 @@ const DEMO_SVG={
 
   lunge:`<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
     <rect width="200" height="200" fill="#0d0a1a"/>
-    <style>
-      .stick{stroke:#a855f7;stroke-width:3;stroke-linecap:round;fill:none;}
-      .head{fill:#a855f7;}
-      .floor{stroke:#444;stroke-width:2;}
-      .label{fill:#c4b5fd;font-family:sans-serif;font-size:11px;text-anchor:middle;}
-      @keyframes lunge{0%,100%{transform:translateY(0)}50%{transform:translateY(22px)}}
-      .body{animation:lunge 2s ease-in-out infinite;}
-    </style>
-    <line class="floor" x1="20" y1="165" x2="180" y2="165"/>
-    <g class="body">
-      <circle class="head" cx="100" cy="55" r="11"/>
-      <line class="stick" x1="100" y1="66" x2="100" y2="110"/>
-      <line class="stick" x1="100" y1="80" x2="78" y2="96"/>
-      <line class="stick" x1="100" y1="80" x2="122" y2="96"/>
-      <line class="stick" x1="100" y1="110" x2="125" y2="135"/>
-      <line class="stick" x1="125" y1="135" x2="135" y2="162"/>
-      <line class="stick" x1="100" y1="110" x2="75" y2="132"/>
-      <line class="stick" x1="75" y1="132" x2="65" y2="162"/>
-    </g>
+    <style>.stick{stroke:#a855f7;stroke-width:4;stroke-linecap:round;fill:none;}.head{fill:#a855f7;}.floor{stroke:#444;stroke-width:2;}.label{fill:#c4b5fd;font-family:sans-serif;font-size:11px;text-anchor:middle;}</style>
+    <line class="floor" x1="20" y1="167" x2="180" y2="167"/>
+    <circle class="head" cx="100" cy="55" r="11">
+      <animate attributeName="cy" values="55;75;55" dur="1.9s" repeatCount="indefinite"/>
+    </circle>
+    <line class="stick" x1="100" y1="66" x2="100" y2="110">
+      <animate attributeName="y1" values="66;86;66" dur="1.9s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="110;122;110" dur="1.9s" repeatCount="indefinite"/>
+    </line>
+    <line class="stick" x1="100" y1="80" x2="78" y2="96">
+      <animate attributeName="y1" values="80;100;80" dur="1.9s" repeatCount="indefinite"/>
+    </line>
+    <line class="stick" x1="100" y1="80" x2="122" y2="96">
+      <animate attributeName="y1" values="80;100;80" dur="1.9s" repeatCount="indefinite"/>
+    </line>
+    <!-- Передняя нога: бедро сгибается сильно -->
+    <line class="stick" x1="100" y1="110" x2="125" y2="130">
+      <animate attributeName="y1" values="110;122;110" dur="1.9s" repeatCount="indefinite"/>
+      <animate attributeName="x2" values="125;130;125" dur="1.9s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="130;148;130" dur="1.9s" repeatCount="indefinite"/>
+    </line>
+    <line class="stick" x1="125" y1="130" x2="135" y2="163">
+      <animate attributeName="x1" values="125;130;125" dur="1.9s" repeatCount="indefinite"/>
+      <animate attributeName="y1" values="130;148;130" dur="1.9s" repeatCount="indefinite"/>
+    </line>
+    <!-- Задняя нога: колено почти касается пола -->
+    <line class="stick" x1="100" y1="110" x2="75" y2="128">
+      <animate attributeName="y1" values="110;122;110" dur="1.9s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="128;158;128" dur="1.9s" repeatCount="indefinite"/>
+    </line>
+    <line class="stick" x1="75" y1="128" x2="65" y2="163">
+      <animate attributeName="y1" values="128;158;128" dur="1.9s" repeatCount="indefinite"/>
+      <animate attributeName="x2" values="65;72;65" dur="1.9s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="163;160;163" dur="1.9s" repeatCount="indefinite"/>
+    </line>
     <text class="label" x="100" y="186">Колено передней ноги над пяткой</text>
   </svg>`,
 
   burpee:`<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
     <rect width="200" height="200" fill="#0d0a1a"/>
-    <style>
-      .stick{stroke:#a855f7;stroke-width:3;stroke-linecap:round;fill:none;}
-      .head{fill:#a855f7;}
-      .floor{stroke:#444;stroke-width:2;}
-      .label{fill:#c4b5fd;font-family:sans-serif;font-size:11px;text-anchor:middle;}
-      @keyframes burpee{
-        0%{transform:translateY(0) scaleY(1)}
-        20%{transform:translateY(40px) scaleY(0.6)}
-        40%{transform:translateY(60px) scaleY(0.35)}
-        60%{transform:translateY(40px) scaleY(0.6)}
-        80%,100%{transform:translateY(-15px) scaleY(1.05)}
-      }
-      .body{animation:burpee 2.4s ease-in-out infinite;transform-origin:100px 155px;}
-    </style>
+    <style>.stick{stroke:#a855f7;stroke-width:4;stroke-linecap:round;fill:none;}.head{fill:#a855f7;}.floor{stroke:#444;stroke-width:2;}.label{fill:#c4b5fd;font-family:sans-serif;font-size:11px;text-anchor:middle;}</style>
     <line class="floor" x1="20" y1="162" x2="180" y2="162"/>
-    <g class="body">
-      <circle class="head" cx="100" cy="55" r="11"/>
-      <line class="stick" x1="100" y1="66" x2="100" y2="110"/>
-      <line class="stick" x1="100" y1="80" x2="78" y2="96"/>
-      <line class="stick" x1="100" y1="80" x2="122" y2="96"/>
-      <line class="stick" x1="100" y1="110" x2="88" y2="138"/>
-      <line class="stick" x1="88" y1="138" x2="85" y2="158"/>
-      <line class="stick" x1="100" y1="110" x2="112" y2="138"/>
-      <line class="stick" x1="112" y1="138" x2="115" y2="158"/>
-    </g>
+    <!-- 4 фазы: стоя → присед → упор лёжа → прыжок, голова реально перемещается по сложной траектории -->
+    <circle class="head" cx="100" cy="50" r="11">
+      <animate attributeName="cx" values="100;100;145;145;100;100" keyTimes="0;0.15;0.4;0.55;0.8;1" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="cy" values="50;95;128;128;30;50" keyTimes="0;0.15;0.4;0.55;0.8;1" dur="2.6s" repeatCount="indefinite"/>
+    </circle>
+    <line class="stick" x1="100" y1="61" x2="100" y2="105">
+      <animate attributeName="x1" values="100;100;134;134;100;100" keyTimes="0;0.15;0.4;0.55;0.8;1" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="y1" values="61;106;132;132;42;61" keyTimes="0;0.15;0.4;0.55;0.8;1" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="x2" values="100;100;60;60;100;100" keyTimes="0;0.15;0.4;0.55;0.8;1" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="105;128;130;130;82;105" keyTimes="0;0.15;0.4;0.55;0.8;1" dur="2.6s" repeatCount="indefinite"/>
+    </line>
+    <!-- Руки: вдоль тела стоя → упор на пол лёжа -->
+    <line class="stick" x1="100" y1="75" x2="80" y2="92">
+      <animate attributeName="y1" values="75;115;131;131;58;75" keyTimes="0;0.15;0.4;0.55;0.8;1" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="x1" values="100;100;134;134;100;100" keyTimes="0;0.15;0.4;0.55;0.8;1" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="x2" values="80;80;120;120;78;80" keyTimes="0;0.15;0.4;0.55;0.8;1" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="92;130;152;152;90;92" keyTimes="0;0.15;0.4;0.55;0.8;1" dur="2.6s" repeatCount="indefinite"/>
+    </line>
+    <!-- Ноги: стоя → присед → вытянуты назад (упор) → прыжок врозь -->
+    <line class="stick" x1="100" y1="105" x2="88" y2="135">
+      <animate attributeName="x1" values="100;100;60;60;100;100" keyTimes="0;0.15;0.4;0.55;0.8;1" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="y1" values="105;128;130;130;82;105" keyTimes="0;0.15;0.4;0.55;0.8;1" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="x2" values="88;82;40;40;78;88" keyTimes="0;0.15;0.4;0.55;0.8;1" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="135;150;132;132;145;135" keyTimes="0;0.15;0.4;0.55;0.8;1" dur="2.6s" repeatCount="indefinite"/>
+    </line>
+    <line class="stick" x1="100" y1="105" x2="112" y2="135">
+      <animate attributeName="x1" values="100;100;60;60;100;100" keyTimes="0;0.15;0.4;0.55;0.8;1" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="y1" values="105;128;130;130;82;105" keyTimes="0;0.15;0.4;0.55;0.8;1" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="x2" values="112;118;30;30;122;112" keyTimes="0;0.15;0.4;0.55;0.8;1" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="135;150;132;132;145;135" keyTimes="0;0.15;0.4;0.55;0.8;1" dur="2.6s" repeatCount="indefinite"/>
+    </line>
     <text class="label" x="100" y="186">4 фазы: присед→упор→отжим→прыжок</text>
   </svg>`,
 
   pullup:`<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
     <rect width="200" height="200" fill="#0d0a1a"/>
-    <style>
-      .stick{stroke:#a855f7;stroke-width:3;stroke-linecap:round;fill:none;}
-      .head{fill:#a855f7;}
-      .bar{stroke:#888;stroke-width:5;stroke-linecap:round;}
-      .label{fill:#c4b5fd;font-family:sans-serif;font-size:11px;text-anchor:middle;}
-      @keyframes pullup{0%,100%{transform:translateY(0)}45%,55%{transform:translateY(-35px)}}
-      .body{animation:pullup 2s ease-in-out infinite;}
-    </style>
+    <style>.stick{stroke:#a855f7;stroke-width:4;stroke-linecap:round;fill:none;}.head{fill:#a855f7;}.bar{stroke:#888;stroke-width:5;stroke-linecap:round;}.label{fill:#c4b5fd;font-family:sans-serif;font-size:11px;text-anchor:middle;}</style>
     <line class="bar" x1="50" y1="35" x2="150" y2="35"/>
     <line stroke="#555" stroke-width="2" x1="70" y1="20" x2="70" y2="35"/>
     <line stroke="#555" stroke-width="2" x1="130" y1="20" x2="130" y2="35"/>
-    <g class="body">
-      <line class="stick" x1="80" y1="35" x2="88" y2="65"/>
-      <line class="stick" x1="120" y1="35" x2="112" y2="65"/>
-      <circle class="head" cx="100" cy="75" r="10"/>
-      <line class="stick" x1="100" y1="85" x2="100" y2="125"/>
-      <line class="stick" x1="100" y1="125" x2="88" y2="155"/>
-      <line class="stick" x1="100" y1="125" x2="112" y2="155"/>
-    </g>
+    <!-- Руки: прямые внизу → согнутые локти вверху (кисти всегда на перекладине) -->
+    <line class="stick" x1="80" y1="35" x2="90" y2="68">
+      <animate attributeName="x2" values="90;105;90" dur="1.8s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="68;48;68" dur="1.8s" repeatCount="indefinite"/>
+    </line>
+    <line class="stick" x1="120" y1="35" x2="110" y2="68">
+      <animate attributeName="x2" values="110;95;110" dur="1.8s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="68;48;68" dur="1.8s" repeatCount="indefinite"/>
+    </line>
+    <circle class="head" cx="100" cy="78" r="10">
+      <animate attributeName="cy" values="78;42;78" dur="1.8s" repeatCount="indefinite"/>
+    </circle>
+    <line class="stick" x1="100" y1="88" x2="100" y2="128">
+      <animate attributeName="y1" values="88;52;88" dur="1.8s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="128;100;128" dur="1.8s" repeatCount="indefinite"/>
+    </line>
+    <line class="stick" x1="100" y1="128" x2="88" y2="158">
+      <animate attributeName="y1" values="128;100;128" dur="1.8s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="158;130;158" dur="1.8s" repeatCount="indefinite"/>
+    </line>
+    <line class="stick" x1="100" y1="128" x2="112" y2="158">
+      <animate attributeName="y1" values="128;100;128" dur="1.8s" repeatCount="indefinite"/>
+      <animate attributeName="y2" values="158;130;158" dur="1.8s" repeatCount="indefinite"/>
+    </line>
     <text class="label" x="100" y="188">Подбородок выше перекладины</text>
   </svg>`
 };
@@ -1257,8 +1352,14 @@ window.onload=()=>{
   q('goalInput')?.addEventListener('input',e=>{const v=parseInt(e.target.value);if(v>0){goalReps=v;save();updProgress();}});
 
   // Mode
-  q('modeCam')?.addEventListener('click',()=>{currentMode='camera';q('video').style.display='';q('vidUp').style.display='none';q('fileUploadBtn').classList.remove('visible');q('modeCam').classList.add('active');q('modeVid').classList.remove('active');toast('📷 Камера');});
-  q('modeVid')?.addEventListener('click',()=>{currentMode='video';q('video').style.display='none';q('vidUp').style.display='';q('fileUploadBtn').classList.add('visible');q('modeVid').classList.add('active');q('modeCam').classList.remove('active');toast('🎥 Видео — нажмите «Загрузить» и выберите файл');});
+  q('modeCam')?.addEventListener('click',()=>{
+    if(isRunning)stopAll(); // переключение режима во время активной тренировки раньше оставляло старую камеру/видео работать в фоне — это и вызывало путаницу со скелетом и счётчиком
+    currentMode='camera';q('video').style.display='';q('vidUp').style.display='none';q('fileUploadBtn').classList.remove('visible');q('modeCam').classList.add('active');q('modeVid').classList.remove('active');toast('📷 Камера');
+  });
+  q('modeVid')?.addEventListener('click',()=>{
+    if(isRunning)stopAll();
+    currentMode='video';q('video').style.display='none';q('vidUp').style.display='';q('fileUploadBtn').classList.add('visible');q('modeVid').classList.add('active');q('modeCam').classList.remove('active');toast('🎥 Видео — нажмите «Загрузить» и выберите файл');
+  });
 
   // Controls
   q('startBtn')?.addEventListener('click',()=>countdown(()=>currentMode==='camera'?startCam():startVid()));

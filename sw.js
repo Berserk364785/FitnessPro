@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fitpulse-v4';
+const CACHE_NAME = 'fitpulse-v5';
 const ASSETS = [
   './',
   './index.html',
