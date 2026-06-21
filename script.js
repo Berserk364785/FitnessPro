@@ -16,6 +16,7 @@ let dayStreak=0,lastWorkoutDate=null; // streak по ДНЯМ (не путать
 let avatar='🏆',avatarIsPhoto=false,lastEmojiAvatar='🏆';
 let dailyQuests=[],dailyQuestDate=null,dailyChallenge={},leaderboard=[];
 let sesStart=0,sesCal=0,sesTimerInt=null;
+let sesAngleSum=0,sesAngleCount=0; // для графика "качество техники со временем" — средний угол на нижней точке движения за сессию
 let workoutTimerInt=null,hiitInt=null;
 let frameId=null,blobUrl=null;
 // HIIT
@@ -39,6 +40,49 @@ function confetti(ms=2000){
   const p=Array.from({length:130},()=>({x:Math.random()*cv.width,y:Math.random()*cv.height-cv.height,s:Math.random()*8+3,c:`hsl(${Math.random()*360},70%,60%)`,v:Math.random()*5+3}));
   const t0=performance.now();
   (function draw(t){if(t-t0>ms){c.clearRect(0,0,cv.width,cv.height);return;}c.clearRect(0,0,cv.width,cv.height);p.forEach(d=>{d.y+=d.v;if(d.y>cv.height)d.y=-d.s;c.fillStyle=d.c;c.fillRect(d.x,d.y,d.s,d.s);});requestAnimationFrame(draw);})(performance.now());
+}
+
+// ============================================================
+//  i18n — переключение языка интерфейса (RU / EN)
+// ============================================================
+// Покрывает статичные подписи UI (кнопки, заголовки, лейблы). Динамические
+// тексты (голосовые подсказки, большинство toast-сообщений, FAQ) пока
+// остаются на русском — это сознательный компромисс, чтобы не рисковать
+// стабильностью основной логики массовой правкой сотен строк разом.
+// Чтобы добавить новый переводимый элемент: пометь его data-i18n="key" в HTML
+// и добавь ключ в оба языка ниже.
+let currentLang='ru';
+const I18N={
+  ru:{
+    appName:'FitPulse',menuTitle:'Меню',tabTrain:'🏋️ Тренировка',tabProfile:'👤 Профиль',tabProgress:'📊 Прогресс',tabPrograms:'📋 Программы',tabCommunity:'🏆 Рейтинг',
+    exerciseTitle:'Упражнение',goalLabel:'🎯 Цель:',modeCam:'📷 Камера',modeVid:'🎥 Видео',
+    btnStart:'🚀 СТАРТ',btnReset:'🔄 Сброс',btnPause:'⏸️ Пауза',btnStop:'⏹️ Стоп',btnHiit:'⚡ HIIT',btnTimer:'⏱️ Таймер',btnVoice:'🎙️ Голос',
+    profileSettings:'Настройки профиля',nameLabel:'Имя',weightLabel:'Вес (кг)',heightLabel:'Рост (см)',btnSave:'💾 Сохранить',
+    personalRecords:'Личные рекорды',achievementsTitle:'🏅 Достижения',btnResetAll:'⚠️ Сбросить весь прогресс',
+    leaderboardTitle:'🏆 Таблица лидеров',inviteTitle:'🎁 Пригласи друга',btnInvite:'🔗 Поделиться ссылкой',
+    settingsTitle:'⚙️ Настройки',faqTitle:'❓ Как пользоваться',feedbackTitle:'💬 Обратная связь',
+  },
+  en:{
+    appName:'FitPulse',menuTitle:'Menu',tabTrain:'🏋️ Workout',tabProfile:'👤 Profile',tabProgress:'📊 Progress',tabPrograms:'📋 Programs',tabCommunity:'🏆 Leaderboard',
+    exerciseTitle:'Exercise',goalLabel:'🎯 Goal:',modeCam:'📷 Camera',modeVid:'🎥 Video',
+    btnStart:'🚀 START',btnReset:'🔄 Reset',btnPause:'⏸️ Pause',btnStop:'⏹️ Stop',btnHiit:'⚡ HIIT',btnTimer:'⏱️ Timer',btnVoice:'🎙️ Voice',
+    profileSettings:'Profile settings',nameLabel:'Name',weightLabel:'Weight (kg)',heightLabel:'Height (cm)',btnSave:'💾 Save',
+    personalRecords:'Personal records',achievementsTitle:'🏅 Achievements',btnResetAll:'⚠️ Reset all progress',
+    leaderboardTitle:'🏆 Leaderboard',inviteTitle:'🎁 Invite a friend',btnInvite:'🔗 Share link',
+    settingsTitle:'⚙️ Settings',faqTitle:'❓ How to use',feedbackTitle:'💬 Feedback',
+  }
+};
+function t(key){return I18N[currentLang]?.[key]||I18N.ru[key]||key;}
+function applyLanguage(lang){
+  currentLang=I18N[lang]?lang:'ru';
+  document.querySelectorAll('[data-i18n]').forEach(el=>{
+    const key=el.dataset.i18n;
+    const val=t(key);
+    if(el.tagName==='INPUT'||el.tagName==='TEXTAREA')el.placeholder=val;else el.textContent=val;
+  });
+  document.documentElement.lang=currentLang;
+  localStorage.setItem('fp_lang',currentLang);
+  document.querySelectorAll('.lang-btn').forEach(b=>b.classList.toggle('active',b.dataset.lang===currentLang));
 }
 
 // ============================================================
@@ -190,8 +234,10 @@ function updSes(){
 //  HISTORY / EXPORT
 // ============================================================
 async function saveSet(silent=false){
-  const r={exercise:currentEx,exName:EX[currentEx]?.name||currentEx,reps:repCount,calories:Math.floor(caloriesBurned),date:new Date().toLocaleString(),volume:totalVolume};
+  const avgAngle=sesAngleCount>0?Math.round(sesAngleSum/sesAngleCount):null;
+  const r={exercise:currentEx,exName:EX[currentEx]?.name||currentEx,reps:repCount,calories:Math.floor(caloriesBurned),date:new Date().toLocaleString(),volume:totalVolume,avgAngle};
   try{await dbAddHistory(r);}catch(e){let h=JSON.parse(localStorage.getItem('fp_hist')||'[]');h.unshift(r);if(h.length>200)h.pop();localStorage.setItem('fp_hist',JSON.stringify(h));}
+  sesAngleSum=0;sesAngleCount=0; // готовим буфер для следующей тренировки
   if(!silent)toast('💾 Сохранено');
 }
 async function showHistory(){
@@ -217,29 +263,73 @@ async function clearHistory(){
 //  CHART
 // ============================================================
 let chartEx='pushup';
+let chartMode='reps'; // 'reps' | 'technique'
 async function drawChart(){
   const cv=document.getElementById('progressChart');if(!cv)return;
   const c=cv.getContext('2d');
   cv.width=cv.parentElement.clientWidth||340;
   let data=[];try{data=await dbGetChartData(chartEx);}catch(e){}
-  const vals=data.map(d=>d.reps||0);
   const W=cv.width,H=cv.height||160,pad=28;
   c.clearRect(0,0,W,H);
+
+  let vals,label,color1,color2,emptyMsg;
+  if(chartMode==='technique'){
+    // Берём только записи, где есть зафиксированный средний угол (старые записи могут
+    // его не иметь — добавлено позже). Переводим угол в % "качества" так, чтобы рост
+    // графика ВСЕГДА означал улучшение, независимо от того, что для разных упражнений
+    // "хорошо" может означать как малый, так и большой угол.
+    const ex=EX[chartEx];
+    const withAngle=data.filter(d=>d.avgAngle!=null);
+    if(!ex||!withAngle.length){
+      c.fillStyle='rgba(255,255,255,.25)';c.font='13px Inter';c.textAlign='center';
+      c.fillText('Пока нет данных по технике — потренируйтесь ещё',W/2,H/2);
+      return;
+    }
+    const inverted=ex.dn>ex.up;
+    vals=withAngle.map(d=>{
+      // Насколько близко достигнутый угол к целевому "глубокому" порогу (ex.dn) —
+      // 100% значит идеально дошёл до целевой глубины, меньше — не дотянул.
+      const target=ex.dn,start=ex.up;
+      const range=Math.abs(start-target)||1;
+      const reached=inverted?(d.avgAngle-start):(start-d.avgAngle);
+      const pct=Math.max(0,Math.min(100,(reached/range)*100));
+      return pct;
+    });
+    label='technique';color1='rgba(34,211,238,.5)';color2='#22d3ee';
+  }else{
+    vals=data.map(d=>d.reps||0);
+    label='reps';color1='rgba(168,85,247,.5)';color2='#c026d3';
+  }
+
   if(!vals.length){c.fillStyle='rgba(255,255,255,.25)';c.font='13px Inter';c.textAlign='center';c.fillText('Нет данных',W/2,H/2);return;}
-  const max=Math.max(...vals,1);
+  const max=chartMode==='technique'?100:Math.max(...vals,1);
   // gradient fill
   const grd=c.createLinearGradient(0,pad,0,H-pad);
-  grd.addColorStop(0,'rgba(168,85,247,.5)');grd.addColorStop(1,'rgba(168,85,247,.02)');
+  grd.addColorStop(0,color1);grd.addColorStop(1,color1.replace(/[\d.]+\)$/,'0.02)'));
   c.beginPath();
   vals.forEach((v,i)=>{const x=pad+i/(vals.length-1||1)*(W-2*pad),y=H-pad-(v/max)*(H-2*pad);i?c.lineTo(x,y):c.moveTo(x,y);});
   c.lineTo(pad+(vals.length-1)/(vals.length-1||1)*(W-2*pad),H-pad);c.lineTo(pad,H-pad);c.closePath();
   c.fillStyle=grd;c.fill();
   // line
-  c.beginPath();c.strokeStyle='#a855f7';c.lineWidth=2.5;c.lineJoin='round';
+  c.beginPath();c.strokeStyle=color2;c.lineWidth=2.5;c.lineJoin='round';
   vals.forEach((v,i)=>{const x=pad+i/(vals.length-1||1)*(W-2*pad),y=H-pad-(v/max)*(H-2*pad);i?c.lineTo(x,y):c.moveTo(x,y);});
   c.stroke();
   // dots
-  vals.forEach((v,i)=>{const x=pad+i/(vals.length-1||1)*(W-2*pad),y=H-pad-(v/max)*(H-2*pad);c.beginPath();c.arc(x,y,4,0,Math.PI*2);c.fillStyle='#c026d3';c.fill();});
+  vals.forEach((v,i)=>{const x=pad+i/(vals.length-1||1)*(W-2*pad),y=H-pad-(v/max)*(H-2*pad);c.beginPath();c.arc(x,y,4,0,Math.PI*2);c.fillStyle=color2;c.fill();});
+
+  if(chartMode==='technique'){
+    const first=vals[0],last=vals[vals.length-1];
+    const trendEl=q('chartTrendNote');
+    if(trendEl){
+      if(vals.length<2)trendEl.textContent='Тренируйтесь ещё, чтобы увидеть динамику';
+      else{
+        const diff=Math.round(last-first);
+        trendEl.textContent=diff>0?`📈 Техника улучшилась на ${diff}% с первой тренировки`:diff<0?`Техника варьируется — это нормально, продолжайте практиковаться`:'Техника стабильна';
+      }
+    }
+  }else{
+    const trendEl=q('chartTrendNote');if(trendEl)trendEl.textContent='';
+  }
 }
 function buildChartTabs(){
   const el=q('chartTabs');if(!el)return;
@@ -468,13 +558,65 @@ function addRep(){
     speak('Попробуйте другое упражнение — опыт за повторы снижается','coach');
     toast('📉 Опыт снижен — смените упражнение для полного XP');
   }
-  addRepCal();updStreak(true);checkQuest();checkChallenge();bufferCommunityProgress(1);
+  addRepCal();updStreak(true);checkQuest();checkChallenge();bufferCommunityProgress(1);bufferTeamProgress(1);
   document.body.style.transition='background .18s';document.body.style.backgroundColor=repCount%2?'':'';
   updProgress();
-  if(repCount>(prRecords[currentEx]||0)){prRecords[currentEx]=repCount;speak('Новый рекорд!','!');bSuccess();confetti(2000);save();toast('🏆 Личный рекорд!');updatePRList();}
+  if(repCount>(prRecords[currentEx]||0)){
+    const prevRecord=prRecords[currentEx]||0;
+    const diff=repCount-prevRecord;
+    prRecords[currentEx]=repCount;
+    if(prevRecord===0){
+      speak('Новый рекорд!','!');toast('🏆 Первый личный рекорд!');
+    }else{
+      speak(`Новый рекорд! На ${diff} больше прошлого!`,'!');
+      toast(`🏆 Рекорд! ${repCount} — это на ${diff} больше прошлых ${prevRecord}`,3500);
+    }
+    bSuccess();confetti(2000);save();updatePRList();
+  }
   if(navigator.vibrate)navigator.vibrate(40);
 }
 let plankXpBuffer=0; // дробный остаток XP от планки, копится между кадрами и сбрасывается целыми порциями
+
+// ============================================================
+//  WELLBEING WATCHDOG — мягкая забота, не диагностика
+// ============================================================
+// Отслеживает два паттерна, не вмешиваясь в логику подсчёта повторений:
+// 1) "Замирание" посередине движения (isDown=true) дольше нескольких секунд —
+//    может означать боль, усталость или просто паузу, мягко спрашиваем как дела.
+// 2) Резкая потеря видимости ключевых точек тела — может означать, что человек
+//    упал или вышел из кадра неожиданно (не во время паузы/стопа).
+// Это НЕ медицинская диагностика — только реакция на паттерн движения, с явно
+// мягкой формулировкой и низкой частотой срабатывания, чтобы не раздражать.
+let stuckSinceTs=null,lastStuckPromptTs=0;
+let lowVisibilityStreak=0,lastFallPromptTs=0;
+function wellbeingCheck(lm,isDownPhase){
+  const now=Date.now();
+  // 1) Замирание в нижней фазе движения
+  if(isDownPhase){
+    if(stuckSinceTs===null)stuckSinceTs=now;
+    else if(now-stuckSinceTs>8000&&now-lastStuckPromptTs>20000){
+      lastStuckPromptTs=now;
+      speak('Всё хорошо? Если тяжело — можно сделать паузу','!');
+      toast('💛 Долго не двигаетесь — всё в порядке?',4000);
+    }
+  }else{
+    stuckSinceTs=null;
+  }
+  // 2) Резкая потеря видимости ключевых точек (возможное падение/потеря равновесия)
+  const keyPoints=[11,12,23,24,25,26];
+  const visibleCount=keyPoints.filter(i=>(lm[i]?.visibility||0)>0.4).length;
+  if(visibleCount<=2){
+    lowVisibilityStreak++;
+    if(lowVisibilityStreak===15&&now-lastFallPromptTs>15000){ // ~15 кадров подряд почти ничего не видно
+      lastFallPromptTs=now;
+      speak('Потерял вас из вида — всё хорошо? Остановите тренировку, если нужно','!');
+      toast('⚠️ Camera lost track of you — are you okay?',4000);
+    }
+  }else{
+    lowVisibilityStreak=0;
+  }
+}
+let plankLastRecordCheckSec=-1;
 function addPlankT(dt){
   const e=EX[currentEx];if(!e?.isPlank)return;
   plankTime+=dt;
@@ -483,9 +625,20 @@ function addPlankT(dt){
   const whole=Math.floor(plankXpBuffer);
   if(whole>0){plankXpBuffer-=whole;addXP(whole);}
   addPlankCal(dt);updStreak(true);checkQuestPlank(dt);checkChallenge();updProgress();checkAch();
+  // Проверяем рекорд по целым секундам, не на каждый кадр — иначе toast спамил бы непрерывно
+  const curSec=Math.floor(plankTime);
+  if(curSec>plankLastRecordCheckSec&&curSec>(prRecords[currentEx]||0)){
+    plankLastRecordCheckSec=curSec;
+    const prevRecord=prRecords[currentEx]||0;
+    prRecords[currentEx]=curSec;
+    if(prevRecord>0&&curSec-prevRecord>=3){ // не дёргаем toast на каждую секунду — только заметный прирост
+      toast(`🏆 Рекорд планки! ${curSec}с — на ${curSec-prevRecord}с больше прошлых ${prevRecord}с`,3000);
+    }
+    save();updatePRList();
+  }
 }
 function resetReps(){
-  repCount=0;q('bigNum').textContent='0';isDown=false;plankTime=0;plankActive=false;goalAchieved=false;repExtremum=null;plankXpBuffer=0;
+  repCount=0;q('bigNum').textContent='0';isDown=false;plankTime=0;plankActive=false;goalAchieved=false;repExtremum=null;plankXpBuffer=0;plankLastRecordCheckSec=-1;
   updStreak(false);updProgress();speak('Сброшено');
 }
 function updProgress(){
@@ -566,6 +719,7 @@ function onResults(res){
   if(!res.poseLandmarks||!isRunning||isPaused)return;
   const lm=res.poseLandmarks,e=EX[currentEx];if(!e)return;
   drawSkel(lm);
+  wellbeingCheck(lm,isDown); // не влияет на счёт, только наблюдает
   let ang=0,ok=true;
   try{
     if(e.ang==='elbow')ang=bestAng(lm,'elbow');
@@ -612,7 +766,12 @@ function onResults(res){
     if(inverted?sa<repExtremum:sa>repExtremum)repExtremum=sa;
     // Засчитываем повтор, когда вышли за верхний порог
     const crossedUp=inverted?sa<uT:sa>uT;
-    if(crossedUp){addRep();isDown=false;goalAchieved=false;repExtremum=sa;}
+    if(crossedUp){
+      // repExtremum сейчас содержит самый глубокий угол, достигнутый за этот повтор —
+      // это и есть честный показатель техники (глубина движения), копим для графика.
+      sesAngleSum+=repExtremum;sesAngleCount++;
+      addRep();isDown=false;goalAchieved=false;repExtremum=sa;
+    }
   }
 
   const nearTop=inverted?sa<uT+10:sa>uT-10;
@@ -726,6 +885,27 @@ function daysBetween(key1,key2){
   const d1=new Date(key1+'T00:00:00'),d2=new Date(key2+'T00:00:00');
   return Math.round((d2-d1)/86400000);
 }
+// ============================================================
+//  OVERTRAINING CHECK — забота про отдых, не жёсткий лимит
+// ============================================================
+// Считает завершённые подходы за сегодняшний локальный день. После 4-го мягко
+// напоминает про восстановление, после 6-го — более явно. Ничего не блокирует,
+// это просто честное напоминание, а не ограничение функциональности.
+function checkOvertraining(){
+  const today=localDateKey();
+  let counts=JSON.parse(localStorage.getItem('fp_sessions_today')||'{}');
+  if(counts.date!==today)counts={date:today,n:0};
+  counts.n+=1;
+  localStorage.setItem('fp_sessions_today',JSON.stringify(counts));
+  if(counts.n===4){
+    speak('Уже 4 подхода сегодня — не забывайте про отдых, мышцам тоже нужно восстановление','coach');
+    toast('💛 4 тренировки за день — отличная активность, но не забывайте отдыхать',4000);
+  }else if(counts.n===6){
+    speak('6 тренировок за один день — это много. Перетренированность замедляет прогресс, а не ускоряет его','!');
+    toast('⚠️ Возможно, на сегодня уже достаточно — дайте телу восстановиться',5000);
+  }
+}
+
 function updateDayStreak(){
   const today=localDateKey();
   if(lastWorkoutDate===today){updateDayStreakUI();return;} // уже засчитан сегодня, повторный вызов в тот же день ничего не меняет
@@ -764,9 +944,10 @@ function stopAll(){
   const cv=q('canvas');if(cv){const cx=cv.getContext('2d');cx.clearRect(0,0,cv.width,cv.height);}
   // Сбрасываем сглаживание угла, чтобы новая тренировка не наследовала старые значения
   angHistory=[];lastSmooth=null;isDown=false;repExtremum=null;
+  stuckSinceTs=null;lowVisibilityStreak=0;
   setCtrl(false);
   const didWork=repCount>0||plankTime>0;
-  if(didWork){saveSet(true);updateDayStreak();maybeRewardReferrer();flushCommunityProgress();toast('✅ Тренировка сохранена');publishToCloud(true);}else toast('Стоп');
+  if(didWork){saveSet(true);updateDayStreak();checkOvertraining();maybeRewardReferrer();flushCommunityProgress();flushTeamProgress();toast('✅ Тренировка сохранена');publishToCloud(true);}else toast('Стоп');
   stopHiit();
 }
 function pauseAll(){
@@ -1077,6 +1258,79 @@ async function refreshCommunityChallengeUI(){
 }
 
 // ============================================================
+//  КОМАНДНЫЕ ЧЕЛЛЕНДЖИ С ДРУЗЬЯМИ
+// ============================================================
+let myRoomCode=null;
+let teamRepsBuffer=0,teamFlushTimer=null;
+function bufferTeamProgress(n=1){
+  if(!myRoomCode)return;
+  teamRepsBuffer+=n;
+  clearTimeout(teamFlushTimer);
+  teamFlushTimer=setTimeout(flushTeamProgress,4000);
+}
+async function flushTeamProgress(){
+  if(!myRoomCode||teamRepsBuffer<=0)return;
+  const amount=teamRepsBuffer;teamRepsBuffer=0;
+  await cloudAddTeamProgress(myRoomCode,amount);
+  refreshTeamRoomUI();
+}
+async function refreshTeamRoomUI(){
+  const card=q('teamRoomCard');if(!card)return;
+  if(!myRoomCode){
+    card.querySelector('.team-room-active')?.style.setProperty('display','none');
+    card.querySelector('.team-room-empty')?.style.setProperty('display','block');
+    return;
+  }
+  const room=await cloudFetchRoom(myRoomCode);
+  if(!room){myRoomCode=null;localStorage.removeItem('fp_room_code');refreshTeamRoomUI();return;}
+  card.querySelector('.team-room-empty')?.style.setProperty('display','none');
+  const activeEl=card.querySelector('.team-room-active');
+  if(activeEl)activeEl.style.display='block';
+  q('teamRoomName').textContent=room.name;
+  q('teamRoomCode').textContent=room.code;
+  const myId=getDeviceId();
+  const medals=['🥇','🥈','🥉'];
+  q('teamRoomMembers').innerHTML=room.members.map((m,i)=>`<div class="lb-item${m.device_id===myId?' me':''}">
+    <div class="lb-rank">${medals[i]||(i+1)}</div>
+    <div class="lb-av">${m.device_id===myId?'🫵':'🏃'}</div>
+    <div class="lb-name">${m.display_name}${m.device_id===myId?' (Вы)':''}</div>
+    <div class="lb-score">${m.progress} повт.</div>
+  </div>`).join('');
+}
+async function createTeamRoom(){
+  const nameInput=q('newRoomName');
+  const roomName=nameInput?.value.trim()||'Моя команда';
+  const code=await cloudCreateRoom(roomName,userName);
+  if(!code){toast('❌ Не получилось создать комнату');return;}
+  myRoomCode=code;localStorage.setItem('fp_room_code',code);
+  toast(`✅ Комната создана! Код: ${code}`,4000);
+  if(nameInput)nameInput.value='';
+  refreshTeamRoomUI();
+}
+async function joinTeamRoom(){
+  const codeInput=q('joinRoomCode');
+  const code=codeInput?.value.trim().toUpperCase();
+  if(!code||code.length<4){toast('Введите код комнаты');return;}
+  const ok=await cloudJoinRoom(code,userName);
+  if(!ok){toast('❌ Комната не найдена — проверьте код');return;}
+  myRoomCode=code;localStorage.setItem('fp_room_code',code);
+  toast('✅ Вы присоединились к команде!');
+  if(codeInput)codeInput.value='';
+  refreshTeamRoomUI();
+}
+function leaveTeamRoom(){
+  myRoomCode=null;localStorage.removeItem('fp_room_code');
+  toast('Вы покинули команду (прогресс в комнате сохранён)');
+  refreshTeamRoomUI();
+}
+function shareRoomCode(){
+  if(!myRoomCode)return;
+  const txt=`💪 Присоединяйся к моей команде в FitPulse! Код комнаты: ${myRoomCode}\n${APP_URL}`;
+  if(navigator.share)navigator.share({title:'FitPulse — командный челлендж',text:txt});
+  else{navigator.clipboard?.writeText(txt);toast('🔗 Код скопирован!');}
+}
+
+// ============================================================
 //  SHARE
 // ============================================================
 function updateSharePreview(){
@@ -1168,7 +1422,7 @@ function openTab(id){
   const el=document.getElementById('tab-'+id);if(el)el.classList.add('active');
   if(id==='progress'){drawChart();buildChartTabs();}
   if(id==='profile')updateLvlUI();
-  if(id==='community'){updateLB();updateSharePreview();refreshCommunityChallengeUI();}
+  if(id==='community'){updateLB();updateSharePreview();refreshCommunityChallengeUI();refreshTeamRoomUI();}
 }
 
 // ============================================================
@@ -1379,8 +1633,15 @@ window.onload=()=>{
   captureReferralOnLoad();
   registerSW();
   setTheme(localStorage.getItem('fp_theme')||'violet');
+  applyLanguage(localStorage.getItem('fp_lang')||'ru');
+  myRoomCode=localStorage.getItem('fp_room_code')||null;
   load();loadVoicePrefs();
   buildExGrid();buildMoreExGrid();buildProgsGrid();buildChartTabs();buildEmojiGrid();buildThemeGrid();
+  document.querySelectorAll('.chart-mode-btn').forEach(b=>b.addEventListener('click',()=>{
+    chartMode=b.dataset.mode;
+    document.querySelectorAll('.chart-mode-btn').forEach(x=>x.classList.toggle('active',x===b));
+    drawChart();
+  }));
 
   // Прогрев голосов TTS: на многих мобильных браузерах getVoices() возвращает пустой
   // список синхронно при загрузке страницы, список наполняется только после события
@@ -1497,6 +1758,7 @@ window.onload=()=>{
   q('sideSelect')?.addEventListener('change',e=>{prefSide=e.target.value;save();});
   q('sensRange')?.addEventListener('input',e=>{sens=parseFloat(e.target.value);q('sensVal').textContent=sens.toFixed(2);save();});
   q('calibBtn')?.addEventListener('click',()=>{toast('Встаньте ровно 2 сек...');setTimeout(()=>{calibAngles[currentEx]=180;toast('✅ Калибровка выполнена');},2000);});
+  document.querySelectorAll('.lang-btn').forEach(b=>b.addEventListener('click',()=>applyLanguage(b.dataset.lang)));
 
   // Voice coach settings
   q('voiceToggle')?.addEventListener('change',e=>{voiceEnabled=e.target.checked;saveVoicePrefs();toast(voiceEnabled?'🔊 Голос включён':'🔇 Голос выключен');});
@@ -1521,6 +1783,10 @@ window.onload=()=>{
   q('publishNowBtn')?.addEventListener('click',async()=>{await publishToCloud(false);await updateLB();});
   q('shareResultBtn')?.addEventListener('click',shareResult);
   q('inviteFriendBtn')?.addEventListener('click',shareReferral);
+  q('createRoomBtn')?.addEventListener('click',createTeamRoom);
+  q('joinRoomBtn')?.addEventListener('click',joinTeamRoom);
+  q('leaveRoomBtn')?.addEventListener('click',leaveTeamRoom);
+  q('shareRoomBtn')?.addEventListener('click',shareRoomCode);
   q('forceUpdateBtn')?.addEventListener('click',async()=>{
     toast('🔄 Сброс кэша...', 3000);
     // Разрегистрируем все Service Workers этого сайта

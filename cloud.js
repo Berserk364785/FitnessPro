@@ -189,3 +189,80 @@ async function cloudAddCommunityProgress(weekKey,amount){
     return true;
   }catch(e){console.warn('cloudAddCommunityProgress failed',e);return false;}
 }
+
+// ============================================================
+//  КОМАНДНЫЕ ЧЕЛЛЕНДЖИ С ДРУЗЬЯМИ
+// ============================================================
+// Комната — это просто запись с коротким кодом, к которой присоединяются по коду.
+// Прогресс участников виден только внутри комнаты (не глобально), что честнее
+// анонимного рейтинга — соревнование именно со знакомыми людьми.
+//    create table team_rooms (
+//      code text primary key,
+//      name text not null,
+//      created_at timestamptz default now()
+//    );
+//    create table team_members (
+//      room_code text references team_rooms(code) on delete cascade,
+//      device_id text not null,
+//      display_name text not null,
+//      progress bigint not null default 0,
+//      joined_at timestamptz default now(),
+//      primary key (room_code, device_id)
+//    );
+//    alter table team_rooms enable row level security;
+//    alter table team_members enable row level security;
+//    create policy "Public read rooms" on team_rooms for select using (true);
+//    create policy "Public insert rooms" on team_rooms for insert with check (true);
+//    create policy "Public read members" on team_members for select using (true);
+//    create policy "Public upsert members" on team_members for insert with check (true);
+//    create policy "Public update members" on team_members for update using (true);
+//
+//    create or replace function add_team_progress(rc text, dev text, amount int)
+//    returns void language plpgsql as $$
+//    begin
+//      update team_members set progress = progress + amount where room_code = rc and device_id = dev;
+//    end;
+//    $$;
+//    grant execute on function add_team_progress(text, text, int) to anon;
+function generateRoomCode(){
+  const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // без похожих символов (0/O, 1/I)
+  let code='';for(let i=0;i<6;i++)code+=chars[Math.floor(Math.random()*chars.length)];
+  return code;
+}
+async function cloudCreateRoom(roomName,displayName){
+  if(!CLOUD_ENABLED)return null;
+  const code=generateRoomCode();
+  try{
+    await sbRequest('team_rooms',{method:'POST',prefer:'return=minimal',body:JSON.stringify([{code,name:roomName.slice(0,40)}])});
+    await sbRequest('team_members',{method:'POST',prefer:'return=minimal',body:JSON.stringify([{room_code:code,device_id:getDeviceId(),display_name:displayName.slice(0,24)}])});
+    return code;
+  }catch(e){console.warn('cloudCreateRoom failed',e);return null;}
+}
+async function cloudJoinRoom(code,displayName){
+  if(!CLOUD_ENABLED)return false;
+  try{
+    const rooms=await sbRequest(`team_rooms?select=code&code=eq.${code}&limit=1`,{method:'GET',prefer:''});
+    if(!rooms?.length)return false; // комната с таким кодом не существует
+    await sbRequest(`team_members?on_conflict=room_code,device_id`,{
+      method:'POST',prefer:'resolution=merge-duplicates,return=minimal',
+      body:JSON.stringify([{room_code:code,device_id:getDeviceId(),display_name:displayName.slice(0,24)}])
+    });
+    return true;
+  }catch(e){console.warn('cloudJoinRoom failed',e);return false;}
+}
+async function cloudFetchRoom(code){
+  if(!CLOUD_ENABLED)return null;
+  try{
+    const room=await sbRequest(`team_rooms?select=code,name&code=eq.${code}&limit=1`,{method:'GET',prefer:''});
+    if(!room?.length)return null;
+    const members=await sbRequest(`team_members?select=device_id,display_name,progress&room_code=eq.${code}&order=progress.desc`,{method:'GET',prefer:''});
+    return {...room[0],members:members||[]};
+  }catch(e){console.warn('cloudFetchRoom failed',e);return null;}
+}
+async function cloudAddTeamProgress(code,amount){
+  if(!CLOUD_ENABLED||amount<=0)return false;
+  try{
+    await sbRequest('rpc/add_team_progress',{method:'POST',prefer:'return=minimal',body:JSON.stringify({rc:code,dev:getDeviceId(),amount})});
+    return true;
+  }catch(e){console.warn('cloudAddTeamProgress failed',e);return false;}
+}

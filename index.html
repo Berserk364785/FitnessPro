@@ -70,11 +70,11 @@
 
   <!-- TABS -->
   <div class="tab-bar">
-    <button class="tab-btn active" data-tab="train">🏋️ Тренировка</button>
-    <button class="tab-btn" data-tab="profile">👤 Профиль</button>
-    <button class="tab-btn" data-tab="progress">📊 Прогресс</button>
-    <button class="tab-btn" data-tab="programs">📋 Программы</button>
-    <button class="tab-btn" data-tab="community">🏆 Рейтинг</button>
+    <button class="tab-btn active" data-tab="train" data-i18n="tabTrain">🏋️ Тренировка</button>
+    <button class="tab-btn" data-tab="profile" data-i18n="tabProfile">👤 Профиль</button>
+    <button class="tab-btn" data-tab="progress" data-i18n="tabProgress">📊 Прогресс</button>
+    <button class="tab-btn" data-tab="programs" data-i18n="tabPrograms">📋 Программы</button>
+    <button class="tab-btn" data-tab="community" data-i18n="tabCommunity">🏆 Рейтинг</button>
   </div>
 
   <!-- ===== TAB: TRAIN ===== -->
@@ -116,11 +116,11 @@
 
     <!-- Exercise grid -->
     <div class="card">
-      <div class="card-title">Упражнение</div>
+      <div class="card-title" data-i18n="exerciseTitle">Упражнение</div>
       <div class="exercises-grid" id="exercisesGrid"></div>
       <button class="more-ex-btn" id="moreExBtn">📋 Ещё <span id="moreExCount">5</span> упражнений</button>
       <div class="goal-row">
-        <span class="goal-label">🎯 Цель:</span>
+        <span class="goal-label" data-i18n="goalLabel">🎯 Цель:</span>
         <input type="number" id="goalInput" class="goal-input" value="10" min="1" max="300">
         <div class="presets" id="presets">
           <button class="preset-btn" data-g="10">10</button>
@@ -265,9 +265,14 @@
   <!-- ===== TAB: PROGRESS ===== -->
   <div class="tab-content" id="tab-progress">
     <div class="card">
-      <div class="card-title">График повторений</div>
+      <div class="card-title">График прогресса</div>
+      <div class="chart-mode-toggle">
+        <button class="chart-mode-btn active" data-mode="reps">📊 Повторения</button>
+        <button class="chart-mode-btn" data-mode="technique">🎯 Техника</button>
+      </div>
       <div class="chart-tabs" id="chartTabs"></div>
       <canvas id="progressChart" height="160"></canvas>
+      <div id="chartTrendNote" class="chart-trend-note"></div>
     </div>
     <div class="card">
       <div class="card-title">Управление</div>
@@ -323,6 +328,31 @@
         <div class="community-challenge-bar" id="communityChallengeBar"></div>
       </div>
       <div style="font-size:.72rem;color:var(--text2);text-align:right;margin-top:4px"><span id="communityChallengePct">0%</span> от общей цели</div>
+    </div>
+    <div class="card team-room-card" id="teamRoomCard">
+      <div class="card-title">👥 Команда друзей</div>
+      <div class="team-room-empty">
+        <div style="font-size:.85rem;color:var(--text2);margin-bottom:10px">Создайте комнату или присоединитесь по коду — соревнуйтесь только с теми, кого знаете</div>
+        <div class="field-row" style="margin-bottom:8px">
+          <input type="text" id="newRoomName" class="inp" style="flex:1;text-align:left" placeholder="Название команды" maxlength="40">
+          <button class="m-btn" id="createRoomBtn" style="width:auto;padding:10px 16px">Создать</button>
+        </div>
+        <div class="field-row">
+          <input type="text" id="joinRoomCode" class="inp" style="flex:1;text-align:left;text-transform:uppercase" placeholder="Код комнаты" maxlength="6">
+          <button class="m-btn ghost" id="joinRoomBtn" style="width:auto;padding:10px 16px">Войти</button>
+        </div>
+      </div>
+      <div class="team-room-active" style="display:none">
+        <div class="team-room-header">
+          <div>
+            <div class="team-room-name" id="teamRoomName">—</div>
+            <div class="team-room-code-label">Код: <strong id="teamRoomCode">—</strong></div>
+          </div>
+          <button class="m-btn ghost" id="shareRoomBtn" style="width:auto;padding:8px 12px">🔗 Поделиться</button>
+        </div>
+        <div id="teamRoomMembers"></div>
+        <button class="m-btn ghost" id="leaveRoomBtn" style="margin-top:10px">Покинуть команду</button>
+      </div>
     </div>
     <div class="card referral-card">
       <div class="card-title">🎁 Пригласи друга</div>
@@ -384,8 +414,14 @@
 
 <div class="modal-ov" id="settingsModal">
   <div class="modal-box">
-    <div class="modal-head"><button class="modal-close" id="settingsBackBtn" title="Назад">←</button><h3>⚙️ Настройки</h3><button class="modal-close" data-close="settingsModal">✕</button></div>
+    <div class="modal-head"><button class="modal-close" id="settingsBackBtn" title="Назад">←</button><h3 data-i18n="settingsTitle">⚙️ Настройки</h3><button class="modal-close" data-close="settingsModal">✕</button></div>
     <div class="modal-body">
+      <div class="field-row"><label>Language / Язык</label>
+        <div style="display:flex;gap:6px">
+          <button class="lang-btn active" data-lang="ru">RU</button>
+          <button class="lang-btn" data-lang="en">EN</button>
+        </div>
+      </div>
       <div class="field-row"><label>Приоритетная сторона</label>
         <select id="sideSelect" class="inp" style="width:110px"><option value="auto">Авто</option><option value="left">Левая</option><option value="right">Правая</option></select>
       </div>
