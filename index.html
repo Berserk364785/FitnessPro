@@ -44,6 +44,12 @@
       <div class="onboard-step"><span class="onboard-step-ico">📐</span><div class="onboard-step-txt"><strong>Встаньте боком</strong> к камере, всё тело в кадре</div></div>
       <div class="onboard-step"><span class="onboard-step-ico">🏆</span><div class="onboard-step-txt"><strong>Зарабатывайте XP</strong>, выполняйте задания, бейте рекорды!</div></div>
     </div>
+    <div class="onboard-level-label">Ваш уровень подготовки?</div>
+    <div class="onboard-level-options" id="onboardLevelOptions">
+      <button class="onboard-level-btn" data-level="beginner">🌱<span>Новичок</span></button>
+      <button class="onboard-level-btn active" data-level="intermediate">💪<span>Средний</span></button>
+      <button class="onboard-level-btn" data-level="advanced">🔥<span>Продвинутый</span></button>
+    </div>
     <button class="onboard-btn" id="onboardBtn">Начать 🚀</button>
   </div>
 </div>
@@ -74,20 +80,24 @@
   <!-- ===== TAB: TRAIN ===== -->
   <div class="tab-content active" id="tab-train">
 
-    <!-- Quest / Challenge -->
+    <!-- Day streak -->
+    <div class="day-streak-banner" id="dayStreakBanner">
+      <span class="day-streak-fire">🔥</span>
+      <div class="day-streak-text">
+        <div class="day-streak-num" id="dayStreakNum">0 дней</div>
+        <div class="day-streak-sub">подряд с тренировкой</div>
+      </div>
+    </div>
+
+    <!-- Quests / Challenge -->
     <div class="quest-block quest-type collapsed" id="questBlock">
       <div class="quest-header-row" onclick="toggleQuest('questBlock')">
         <span class="quest-icon-big">📅</span>
-        <div class="quest-title">Ежедневное задание</div>
+        <div class="quest-title">Задания на сегодня</div>
         <span class="quest-chevron">▼</span>
       </div>
       <div class="quest-body">
-        <div class="quest-desc" id="questDesc">Загрузка...</div>
-        <div class="quest-bar-wrap">
-          <div class="quest-bar"><div class="quest-bar-fill" id="questFill"></div></div>
-          <div class="quest-pct" id="questPct">0%</div>
-        </div>
-        <span class="quest-reward" id="questReward">+50 XP</span>
+        <div id="questListHost"></div>
       </div>
     </div>
 
@@ -306,6 +316,19 @@
 
   <!-- ===== TAB: COMMUNITY ===== -->
   <div class="tab-content" id="tab-community">
+    <div class="card community-challenge-card" id="communityChallengeCard" style="display:none">
+      <div class="card-title">🌍 Челлендж недели — все вместе</div>
+      <div id="communityChallengeNum" class="community-challenge-num">0 / 0</div>
+      <div class="community-challenge-bar-wrap">
+        <div class="community-challenge-bar" id="communityChallengeBar"></div>
+      </div>
+      <div style="font-size:.72rem;color:var(--text2);text-align:right;margin-top:4px"><span id="communityChallengePct">0%</span> от общей цели</div>
+    </div>
+    <div class="card referral-card">
+      <div class="card-title">🎁 Пригласи друга</div>
+      <div style="font-size:.85rem;color:var(--text2);margin-bottom:10px">Получите <strong style="color:var(--primary)">+100 XP</strong>, когда друг по вашей ссылке завершит первую тренировку</div>
+      <button class="m-btn" id="inviteFriendBtn">🔗 Поделиться ссылкой</button>
+    </div>
     <div class="card">
       <div class="card-title">🏆 Таблица лидеров</div>
       <div id="lbList"></div>

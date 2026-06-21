@@ -12,8 +12,9 @@ let goalReps=10;
 let userWeight=70,userHeight=170,userName='Спортсмен',prefSide='auto',sens=1.0;
 let calibAngles={},prRecords={},achievements={};
 let xp=0,lvl=1,streak=0,maxStreak=0;
+let dayStreak=0,lastWorkoutDate=null; // streak по ДНЯМ (не путать со streak повторений выше)
 let avatar='🏆',avatarIsPhoto=false,lastEmojiAvatar='🏆';
-let dailyQuest={},dailyChallenge={},leaderboard=[];
+let dailyQuests=[],dailyQuestDate=null,dailyChallenge={},leaderboard=[];
 let sesStart=0,sesCal=0,sesTimerInt=null;
 let workoutTimerInt=null,hiitInt=null;
 let frameId=null,blobUrl=null;
@@ -72,8 +73,8 @@ const PROGS=[
 //  SAVE / LOAD
 // ============================================================
 function save(){
-  const ch={...dailyChallenge,active:false,timer:null};
-  localStorage.setItem('fp2',JSON.stringify({totalVolume,caloriesBurned,achievements,prRecords,xp,lvl,streak,maxStreak,avatar,avatarIsPhoto,userName,userWeight,userHeight,prefSide,sens,goalReps,leaderboard,dailyQuest,dailyChallenge:ch}));
+  const ch=dailyChallenge?{...dailyChallenge,active:false,timer:null}:null;
+  localStorage.setItem('fp2',JSON.stringify({totalVolume,caloriesBurned,achievements,prRecords,xp,lvl,streak,maxStreak,avatar,avatarIsPhoto,userName,userWeight,userHeight,prefSide,sens,goalReps,leaderboard,dailyQuests,dailyQuestDate,dailyChallenge:ch,dayStreak,lastWorkoutDate}));
 }
 function load(){
   const d=JSON.parse(localStorage.getItem('fp2')||'{}');
@@ -84,9 +85,19 @@ function load(){
   userName=d.userName||'Спортсмен';userWeight=d.userWeight||70;userHeight=d.userHeight||170;
   prefSide=d.prefSide||'auto';sens=d.sens||1.0;goalReps=d.goalReps||10;
   leaderboard=d.leaderboard||[{name:'Алекс',xp:450,lvl:5,avatar:'💪'},{name:'Мария',xp:320,lvl:4,avatar:'🏃'},{name:'Дима',xp:180,lvl:3,avatar:'🤸'}];
-  dailyQuest=d.dailyQuest||{desc:'Сделайте 20 отжиманий',req:20,cur:0,xp:50,type:'pushup',done:false};
+  dayStreak=d.dayStreak||0;lastWorkoutDate=d.lastWorkoutDate||null;
+  // Если пользователь пропустил день(и) и просто открыл приложение, не тренируясь —
+  // показываем актуальный (уже сгоревший) streak сразу, а не ждём следующей тренировки,
+  // чтобы это обнаружилось. Сама тренировка всё равно идёт через updateDayStreak().
+  if(lastWorkoutDate&&dayStreak>0){
+    const gap=daysBetween(lastWorkoutDate,localDateKey());
+    if(gap>1)dayStreak=0;
+  }
   const sc=d.dailyChallenge;
-  dailyChallenge=sc?{...sc,active:false,timer:null}:{desc:'10 бёрпи за 60 сек',req:10,cur:0,limit:60,active:false,timer:null,xp:100,type:'burpee'};
+  dailyChallenge=sc?{...sc,active:false,timer:null}:null;
+  dailyQuests=d.dailyQuests||[];
+  dailyQuestDate=d.dailyQuestDate||null;
+  ensureTodaysQuests(); // регенерирует задания, если сохранённая дата не сегодняшняя (по локальному времени устройства)
   // apply to DOM
   const gi=document.getElementById('goalInput');if(gi)gi.value=goalReps;
   const si=document.getElementById('sideSelect');if(si)si.value=prefSide;
@@ -95,7 +106,7 @@ function load(){
   const ni=document.getElementById('nameInput');if(ni)ni.value=userName;
   const wi=document.getElementById('weightInput');if(wi)wi.value=userWeight;
   const hi=document.getElementById('heightInput');if(hi)hi.value=userHeight;
-  updateLvlUI();updateQuestUI();updateChallengeUI();updateLB();updateAchUI();updatePRList();updateSharePreview();updateProfileUI();renderAvatar();
+  updateLvlUI();updateQuestUI();updateChallengeUI();updateDayStreakUI();updateLB();updateAchUI();updatePRList();updateSharePreview();updateProfileUI();renderAvatar();
 }
 
 // ============================================================
@@ -271,25 +282,118 @@ function updatePRList(){
 }
 
 // ============================================================
-//  DAILY QUEST / CHALLENGE
+//  DAILY QUESTS / CHALLENGE — рандомные ежедневные задания
 // ============================================================
-function checkQuest(){
-  if(dailyQuest.done)return;
-  if(dailyQuest.type===currentEx){
-    dailyQuest.cur+=1;
-    if(dailyQuest.cur>=dailyQuest.req){dailyQuest.done=true;addXP(dailyQuest.xp);toast(`✅ Задание! +${dailyQuest.xp} XP`);speak('Ежедневное задание выполнено!');bSuccess();confetti(2000);save();}
-    updateQuestUI();
+// Генерируются заново каждый день по ЛОКАЛЬНОЙ дате устройства пользователя
+// (см. localDateKey выше) — то есть смена заданий происходит в полночь по
+// часовому поясу самого человека, а не по UTC или серверному времени.
+// Seed строится из даты, поэтому генерация детерминирована: один и тот же
+// день всегда даёт один и тот же набор заданий на этом устройстве, но между
+// разными датами они разные — выглядит как "рандом", но не теряется при
+// обновлении страницы в течение дня.
+function seededRandom(seed){
+  // Простой детерминированный PRNG (mulberry32) — без зависимостей, без Math.random
+  let t=seed+=0x6D2B79F5;
+  return function(){
+    t=Math.imul(t^(t>>>15),t|1);
+    t^=t+Math.imul(t^(t>>>7),t|61);
+    return ((t^(t>>>14))>>>0)/4294967296;
+  };
+}
+function dateSeed(dateKey){
+  let h=0;for(let i=0;i<dateKey.length;i++)h=(h*31+dateKey.charCodeAt(i))>>>0;
+  return h;
+}
+const QUEST_POOL=[
+  {type:'pushup',tpl:n=>`Сделайте ${n} отжиманий`,reqRange:[15,35],xpPer:2.5},
+  {type:'squat',tpl:n=>`Сделайте ${n} приседаний`,reqRange:[20,45],xpPer:2.2},
+  {type:'situp',tpl:n=>`Сделайте ${n} раз на пресс`,reqRange:[15,30],xpPer:3},
+  {type:'lunge',tpl:n=>`Сделайте ${n} выпадов`,reqRange:[15,30],xpPer:3},
+  {type:'burpee',tpl:n=>`Сделайте ${n} бёрпи`,reqRange:[8,18],xpPer:5},
+  {type:'pullup',tpl:n=>`Сделайте ${n} подтягиваний`,reqRange:[5,12],xpPer:8},
+  {type:'plank',tpl:n=>`Продержите планку ${n} секунд (суммарно)`,reqRange:[40,90],xpPer:1.2,isPlank:true},
+];
+const CHALLENGE_POOL=[
+  {type:'pushup',tpl:(n,t)=>`${n} отжиманий за ${t} сек`,reqRange:[8,15],limitRange:[40,60]},
+  {type:'squat',tpl:(n,t)=>`${n} приседаний за ${t} сек`,reqRange:[10,20],limitRange:[40,60]},
+  {type:'burpee',tpl:(n,t)=>`${n} бёрпи за ${t} сек`,reqRange:[6,12],limitRange:[50,70]},
+  {type:'situp',tpl:(n,t)=>`${n} на пресс за ${t} сек`,reqRange:[10,18],limitRange:[40,55]},
+  {type:'lunge',tpl:(n,t)=>`${n} выпадов за ${t} сек`,reqRange:[8,16],limitRange:[40,60]},
+];
+function pickRange(rng,[a,b]){return a+Math.floor(rng()*(b-a+1));}
+function generateDailyQuests(dateKey){
+  const rng=seededRandom(dateSeed(dateKey+':quests'));
+  // Перемешиваем пул и берём первые 3 уникальных по типу упражнения, чтобы не
+  // выпало два задания на одно и то же упражнение в один день
+  const pool=[...QUEST_POOL];
+  for(let i=pool.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
+  return pool.slice(0,3).map((q,idx)=>{
+    const req=pickRange(rng,q.reqRange);
+    const xp=Math.round(req*q.xpPer);
+    return {id:`q${idx}`,type:q.type,desc:q.tpl(req),req,cur:0,xp,done:false,isPlank:!!q.isPlank};
+  });
+}
+function generateDailyChallenge(dateKey){
+  const rng=seededRandom(dateSeed(dateKey+':challenge'));
+  const tpl=CHALLENGE_POOL[Math.floor(rng()*CHALLENGE_POOL.length)];
+  const req=pickRange(rng,tpl.reqRange);
+  const limit=pickRange(rng,tpl.limitRange);
+  const xp=Math.round(req*8);
+  return {type:tpl.type,desc:tpl.tpl(req,limit),req,cur:0,limit,active:false,timer:null,xp};
+}
+// Проверяет, актуальны ли задания на сегодня, и если нет — генерирует новые.
+// Вызывается при каждой загрузке страницы; смена происходит ровно по локальной
+// полуночи пользователя, потому что dateKey берётся из localDateKey().
+function ensureTodaysQuests(){
+  const today=localDateKey();
+  if(dailyQuestDate!==today){
+    dailyQuestDate=today;
+    dailyQuests=generateDailyQuests(today);
+    dailyChallenge=generateDailyChallenge(today);
+    save();
   }
 }
+function checkQuest(){
+  let anyDone=false;
+  dailyQuests.forEach(qst=>{
+    if(qst.done||qst.type!==currentEx)return;
+    qst.cur+=1;
+    if(qst.cur>=qst.req){
+      qst.done=true;addXP(qst.xp);toast(`✅ ${qst.desc}! +${qst.xp} XP`);speak('Задание выполнено!');bSuccess();confetti(2000);anyDone=true;
+    }
+  });
+  if(anyDone)save();
+  updateQuestUI();
+}
+function checkQuestPlank(deltaSec){
+  let anyDone=false;
+  dailyQuests.forEach(qst=>{
+    if(qst.done||!qst.isPlank||qst.type!==currentEx)return;
+    qst.cur+=deltaSec;
+    if(qst.cur>=qst.req){
+      qst.cur=qst.req;qst.done=true;addXP(qst.xp);toast(`✅ ${qst.desc}! +${qst.xp} XP`);speak('Задание выполнено!');bSuccess();confetti(2000);anyDone=true;
+    }
+  });
+  if(anyDone)save();
+  updateQuestUI();
+}
 function updateQuestUI(){
-  q('questDesc').textContent=dailyQuest.desc||'';
-  q('questReward').textContent=`+${dailyQuest.xp||50} XP`;
-  const pct=Math.min(100,(dailyQuest.cur/dailyQuest.req)*100);
-  q('questFill').style.width=pct+'%';
-  q('questPct').textContent=Math.round(pct)+'%';
+  const host=q('questListHost');if(!host)return;
+  host.innerHTML=dailyQuests.map(qst=>{
+    const ex=EX[qst.type];
+    const pct=Math.min(100,(qst.cur/qst.req)*100);
+    return `<div class="quest-row${qst.done?' done':''}">
+      <span class="quest-row-emoji">${ex?.emoji||'🎯'}</span>
+      <div class="quest-row-body">
+        <div class="quest-row-desc">${qst.desc}</div>
+        <div class="quest-row-bar"><div class="quest-row-fill" style="width:${pct}%"></div></div>
+      </div>
+      <span class="quest-row-xp">${qst.done?'✓':'+'+qst.xp+' XP'}</span>
+    </div>`;
+  }).join('');
 }
 function startChallenge(){
-  if(dailyChallenge.active)return;
+  if(dailyChallenge.active||dailyChallenge.done)return;
   dailyChallenge.active=true;dailyChallenge.cur=0;
   let t=dailyChallenge.limit||60;
   q('challengeTimer').textContent=fmt(t);
@@ -297,8 +401,8 @@ function startChallenge(){
     if(!dailyChallenge.active){clearInterval(iv);return;}
     t--;q('challengeTimer').textContent=fmt(t);
     if(t<=0){clearInterval(iv);dailyChallenge.active=false;dailyChallenge.timer=null;
-      if(dailyChallenge.cur>=dailyChallenge.req){addXP(dailyChallenge.xp);toast(`✅ Вызов! +${dailyChallenge.xp} XP`);bSuccess();confetti(2500);}
-      else toast('⏰ Время вышло');save();}
+      if(dailyChallenge.cur>=dailyChallenge.req){dailyChallenge.done=true;addXP(dailyChallenge.xp);toast(`✅ Вызов! +${dailyChallenge.xp} XP`);bSuccess();confetti(2500);}
+      else toast('⏰ Время вышло, попробуйте завтра');save();}
   },1000);
   dailyChallenge.timer=iv;
 }
@@ -306,11 +410,14 @@ function checkChallenge(){
   if(!dailyChallenge.active||dailyChallenge.type!==currentEx)return;
   dailyChallenge.cur++;
   if(dailyChallenge.cur>=dailyChallenge.req){
-    dailyChallenge.active=false;if(dailyChallenge.timer)clearInterval(dailyChallenge.timer);dailyChallenge.timer=null;
+    dailyChallenge.active=false;dailyChallenge.done=true;if(dailyChallenge.timer)clearInterval(dailyChallenge.timer);dailyChallenge.timer=null;
     addXP(dailyChallenge.xp);toast(`🏆 Вызов! +${dailyChallenge.xp} XP`);bAch();confetti(3000);save();
   }
 }
-function updateChallengeUI(){q('challengeDesc').textContent=dailyChallenge.desc||'';}
+function updateChallengeUI(){
+  q('challengeDesc').textContent=dailyChallenge.desc||'';
+  const rw=q('challengeReward');if(rw)rw.textContent=dailyChallenge.done?'✓ Выполнено':`+${dailyChallenge.xp||0} XP`;
+}
 const fmt=s=>`${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;
 
 // ============================================================
@@ -361,7 +468,7 @@ function addRep(){
     speak('Попробуйте другое упражнение — опыт за повторы снижается','coach');
     toast('📉 Опыт снижен — смените упражнение для полного XP');
   }
-  addRepCal();updStreak(true);checkQuest();checkChallenge();
+  addRepCal();updStreak(true);checkQuest();checkChallenge();bufferCommunityProgress(1);
   document.body.style.transition='background .18s';document.body.style.backgroundColor=repCount%2?'':'';
   updProgress();
   if(repCount>(prRecords[currentEx]||0)){prRecords[currentEx]=repCount;speak('Новый рекорд!','!');bSuccess();confetti(2000);save();toast('🏆 Личный рекорд!');updatePRList();}
@@ -375,7 +482,7 @@ function addPlankT(dt){
   plankXpBuffer+=e.xpS*dt*levelXpMultiplier();
   const whole=Math.floor(plankXpBuffer);
   if(whole>0){plankXpBuffer-=whole;addXP(whole);}
-  addPlankCal(dt);updStreak(true);checkQuest();checkChallenge();updProgress();checkAch();
+  addPlankCal(dt);updStreak(true);checkQuestPlank(dt);checkChallenge();updProgress();checkAch();
 }
 function resetReps(){
   repCount=0;q('bigNum').textContent='0';isDown=false;plankTime=0;plankActive=false;goalAchieved=false;repExtremum=null;plankXpBuffer=0;
@@ -605,6 +712,46 @@ async function startVid(){
     toast('🎥 Анализ видео');hintFor(currentEx);
   }catch(e){toast('⚠️ '+e.message,5000);q('debugLine').textContent='Ошибка: '+e.message;}
 }
+// ============================================================
+//  DAY STREAK — дней подряд с тренировкой (по локальной дате устройства)
+// ============================================================
+function localDateKey(d=new Date()){
+  // YYYY-MM-DD в часовом поясе пользователя (не UTC!) — критично для корректного
+  // streak: если считать по UTC, для людей восточнее Гринвича "новый день" наступает
+  // на несколько часов раньше реального полуночи, и streak будет ломаться неправильно.
+  const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function daysBetween(key1,key2){
+  const d1=new Date(key1+'T00:00:00'),d2=new Date(key2+'T00:00:00');
+  return Math.round((d2-d1)/86400000);
+}
+function updateDayStreak(){
+  const today=localDateKey();
+  if(lastWorkoutDate===today){updateDayStreakUI();return;} // уже засчитан сегодня, повторный вызов в тот же день ничего не меняет
+  if(lastWorkoutDate===null){
+    dayStreak=1; // самая первая тренировка вообще
+  }else{
+    const gap=daysBetween(lastWorkoutDate,today);
+    if(gap===1)dayStreak+=1;       // тренировался вчера — продолжаем серию
+    else if(gap>1)dayStreak=1;     // пропустил день(и) — серия сгорела, начинаем заново
+    // gap===0 невозможен здесь из-за проверки выше, gap<0 (смена времени на устройстве) — игнорируем как edge case
+  }
+  lastWorkoutDate=today;
+  if(dayStreak===3||dayStreak===7||dayStreak===14||dayStreak===30){
+    speak(`${dayStreak} дней подряд! Невероятная дисциплина!`,'!');bAch();confetti(2500);toast(`🔥 Серия ${dayStreak} дней!`);
+  }
+  updateDayStreakUI();
+  save();
+}
+function updateDayStreakUI(){
+  const numEl=q('dayStreakNum');if(!numEl)return;
+  const word=dayStreak===1?'день':(dayStreak>=2&&dayStreak<=4?'дня':'дней');
+  numEl.textContent=`${dayStreak} ${word}`;
+  const banner=q('dayStreakBanner');
+  if(banner)banner.classList.toggle('cold',dayStreak===0);
+}
+
 function stopAll(){
   sessionGen++; // мгновенно делает невалидными все кадры, которые уже летят от предыдущей камеры/видео
   isRunning=false;isPaused=false;stopSes();
@@ -618,7 +765,8 @@ function stopAll(){
   // Сбрасываем сглаживание угла, чтобы новая тренировка не наследовала старые значения
   angHistory=[];lastSmooth=null;isDown=false;repExtremum=null;
   setCtrl(false);
-  if(repCount>0){saveSet(true);toast('✅ Тренировка сохранена');publishToCloud(true);}else toast('Стоп');
+  const didWork=repCount>0||plankTime>0;
+  if(didWork){saveSet(true);updateDayStreak();maybeRewardReferrer();flushCommunityProgress();toast('✅ Тренировка сохранена');publishToCloud(true);}else toast('Стоп');
   stopHiit();
 }
 function pauseAll(){
@@ -848,9 +996,89 @@ function startVoice(){
 }
 
 // ============================================================
-//  SHARE
+//  REFERRAL — реферальная система
 // ============================================================
 const APP_URL='https://berserk364785.github.io/FitPulse/';
+const REFERRAL_BONUS_XP=100;
+function myReferralLink(){
+  return `${APP_URL}?ref=${getDeviceId()}`;
+}
+function getReferrerFromURL(){
+  const params=new URLSearchParams(location.search);
+  return params.get('ref');
+}
+// Если пользователь пришёл по реферальной ссылке — запоминаем код приглашающего
+// один раз (на случай если он закроет вкладку до первой тренировки) и убираем
+// параметр из адресной строки, чтобы не путался при дальнейшем шаринге своей же ссылки.
+function captureReferralOnLoad(){
+  const ref=getReferrerFromURL();
+  if(ref&&ref!==getDeviceId()&&!localStorage.getItem('fp_referred_by')&&!localStorage.getItem('fp_referral_done')){
+    localStorage.setItem('fp_referred_by',ref);
+    toast('🎁 Вы пришли по приглашению — бонус другу придёт после вашей первой тренировки!',4500);
+  }
+  if(ref){
+    const url=new URL(location.href);url.searchParams.delete('ref');
+    history.replaceState({},'',url.pathname+url.hash);
+  }
+}
+// Вызывается при завершении первой тренировки нового пользователя — начисляет бонус
+// тому, кто его пригласил (проверка дублей идёт на сервере через unique device_id в Supabase)
+async function maybeRewardReferrer(){
+  const referrer=localStorage.getItem('fp_referred_by');
+  if(!referrer||localStorage.getItem('fp_referral_done'))return;
+  localStorage.setItem('fp_referral_done','1'); // помечаем сразу, чтобы не задвоить при повторных вызовах
+  if(!CLOUD_ENABLED)return;
+  await cloudRewardReferrer(referrer,REFERRAL_BONUS_XP);
+}
+function shareReferral(){
+  const link=myReferralLink();
+  const txt=`💪 Присоединяйся ко мне в FitPulse — AI-тренер, который считает повторения и следит за техникой через камеру!\n\n${link}`;
+  if(navigator.share)navigator.share({title:'FitPulse',text:txt,url:link});
+  else{navigator.clipboard?.writeText(txt);toast('🔗 Ссылка скопирована!');}
+}
+
+// ============================================================
+//  ОБЩИЙ ЧЕЛЛЕНДЖ КОМЬЮНИТИ
+// ============================================================
+function isoWeekKey(d=new Date()){
+  // ISO 8601 неделя: YYYY-Www, например '2026-W25'. Используется как ключ записи
+  // в Supabase — чтобы запустить новую неделю, просто добавьте новую строку в таблицу
+  // с новым week_key (старая остаётся в истории).
+  const date=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+  const dayNum=date.getUTCDay()||7;
+  date.setUTCDate(date.getUTCDate()+4-dayNum);
+  const yearStart=new Date(Date.UTC(date.getUTCFullYear(),0,1));
+  const weekNo=Math.ceil((((date-yearStart)/86400000)+1)/7);
+  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2,'0')}`;
+}
+let communityRepsBuffer=0; // копим повторения локально и шлём батчем, а не на каждый рип — экономит запросы
+let communityFlushTimer=null;
+function bufferCommunityProgress(n=1){
+  communityRepsBuffer+=n;
+  clearTimeout(communityFlushTimer);
+  communityFlushTimer=setTimeout(flushCommunityProgress,4000); // шлём не чаще раза в 4 сек простоя
+}
+async function flushCommunityProgress(){
+  if(communityRepsBuffer<=0)return;
+  const amount=communityRepsBuffer;communityRepsBuffer=0;
+  const ok=await cloudAddCommunityProgress(isoWeekKey(),amount);
+  if(ok)refreshCommunityChallengeUI();
+}
+async function refreshCommunityChallengeUI(){
+  const card=q('communityChallengeCard');if(!card)return;
+  const data=await cloudFetchCommunityChallenge(isoWeekKey());
+  if(!data){card.style.display='none';return;}
+  card.style.display='block';
+  const pct=Math.min(100,(data.progress/data.goal)*100);
+  q('communityChallengeBar').style.width=pct+'%';
+  q('communityChallengeNum').textContent=`${data.progress.toLocaleString('ru')} / ${data.goal.toLocaleString('ru')}`;
+  q('communityChallengePct').textContent=Math.round(pct)+'%';
+  if(pct>=100)q('communityChallengeNum').textContent+=' 🎉 Цель достигнута!';
+}
+
+// ============================================================
+//  SHARE
+// ============================================================
 function updateSharePreview(){
   const el=q('sharePreview');if(!el)return;
   el.textContent=`🏆 FitPulse\nУровень ${lvl} · ${xp}/${lvl*100} XP\n💪 Всего повторений: ${totalVolume}\n🔥 Калорий: ${Math.floor(caloriesBurned)}\n⚡ Макс. серия: ${maxStreak}\n\nЗаходи, попробуй сам 👉 ${APP_URL}`;
@@ -940,7 +1168,7 @@ function openTab(id){
   const el=document.getElementById('tab-'+id);if(el)el.classList.add('active');
   if(id==='progress'){drawChart();buildChartTabs();}
   if(id==='profile')updateLvlUI();
-  if(id==='community'){updateLB();updateSharePreview();}
+  if(id==='community'){updateLB();updateSharePreview();refreshCommunityChallengeUI();}
 }
 
 // ============================================================
@@ -1067,8 +1295,15 @@ function toggleQuest(id){document.getElementById(id)?.classList.toggle('collapse
 // запись в начало CHANGELOG (новые сверху). Модалка покажется автоматически
 // один раз тем, у кого в localStorage записана более старая версия —
 // включая существующих пользователей, которые ещё не видели апдейт.
-const CURRENT_VERSION=1;
+const CURRENT_VERSION=2;
 const CHANGELOG=[
+  {v:2,date:'Июнь 2026',items:[
+    'Серия дней подряд с тренировкой 🔥',
+    'Каждый день — новые случайные задания и вызов дня',
+    'Реферальная система: приглашайте друзей за бонус XP',
+    'Общий челлендж недели — тренируемся вместе со всем комьюнити',
+    'Выбор уровня подготовки при первом запуске',
+  ]},
   {v:1,date:'Июнь 2026',items:[
     'Запуск FitPulse: AI-анализ техники через камеру в реальном времени',
     'Голосовой коуч с подсказками по технике для 7 упражнений',
@@ -1078,6 +1313,26 @@ const CHANGELOG=[
     'Раздел обратной связи — делитесь идеями и отзывами',
   ]},
 ];
+// Применяет дефолтные настройки в зависимости от заявленного уровня подготовки.
+// Срабатывает один раз при онбординге — дальше пользователь волен менять цель
+// повторений и скорость голоса вручную, это не перезаписывается повторно.
+function applyFitnessLevelDefaults(level){
+  const presets={
+    beginner:{goal:8,rate:0.85},
+    intermediate:{goal:15,rate:1.0},
+    advanced:{goal:25,rate:1.15},
+  };
+  const p=presets[level]||presets.intermediate;
+  goalReps=p.goal;
+  const gi=q('goalInput');if(gi)gi.value=goalReps;
+  document.querySelectorAll('.preset-btn').forEach(b=>b.classList.toggle('active',parseInt(b.dataset.g)===goalReps));
+  voiceRate=p.rate;
+  const vr=q('voiceRateRange');if(vr)vr.value=voiceRate;
+  const vrv=q('voiceRateVal');if(vrv)vrv.textContent=voiceRate.toFixed(2)+'x';
+  saveVoicePrefs();
+  localStorage.setItem('fp_fitness_level',level);
+  save();
+}
 function checkChangelog(){
   const seen=parseInt(localStorage.getItem('fp_changelog_seen')||'0');
   if(seen>=CURRENT_VERSION)return;
@@ -1121,6 +1376,7 @@ function registerSW(){
 //  INIT
 // ============================================================
 window.onload=()=>{
+  captureReferralOnLoad();
   registerSW();
   setTheme(localStorage.getItem('fp_theme')||'violet');
   load();loadVoicePrefs();
@@ -1136,7 +1392,17 @@ window.onload=()=>{
 
   // Onboarding
   if(!localStorage.getItem('fp_onboarded')){q('onboardOv').classList.add('visible');}
-  q('onboardBtn')?.addEventListener('click',()=>{q('onboardOv').classList.remove('visible');localStorage.setItem('fp_onboarded','1');checkChangelog();});
+  let selectedFitnessLevel='intermediate';
+  document.querySelectorAll('.onboard-level-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      selectedFitnessLevel=btn.dataset.level;
+      document.querySelectorAll('.onboard-level-btn').forEach(b=>b.classList.toggle('active',b===btn));
+    });
+  });
+  q('onboardBtn')?.addEventListener('click',()=>{
+    applyFitnessLevelDefaults(selectedFitnessLevel);
+    q('onboardOv').classList.remove('visible');localStorage.setItem('fp_onboarded','1');checkChangelog();
+  });
   q('replayOnboardBtn')?.addEventListener('click',()=>{closeModal('faqModalWrap');q('onboardOv').classList.add('visible');});
 
   // Показываем «Что нового» существующим пользователям (у новых уже открыт онбординг,
@@ -1254,6 +1520,7 @@ window.onload=()=>{
   q('notifBtn')?.addEventListener('click',()=>Notification.requestPermission().then(p=>toast(p==='granted'?'✅ Разрешено':'❌ Отклонено')));
   q('publishNowBtn')?.addEventListener('click',async()=>{await publishToCloud(false);await updateLB();});
   q('shareResultBtn')?.addEventListener('click',shareResult);
+  q('inviteFriendBtn')?.addEventListener('click',shareReferral);
   q('forceUpdateBtn')?.addEventListener('click',async()=>{
     toast('🔄 Сброс кэша...', 3000);
     // Разрегистрируем все Service Workers этого сайта

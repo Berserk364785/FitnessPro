@@ -96,3 +96,96 @@ async function cloudFetchOne(deviceId){
     return rows?.[0]||null;
   }catch(e){return null;}
 }
+
+// ============================================================
+//  ОБРАТНАЯ СВЯЗЬ
+// ============================================================
+// Чтобы включить — создайте таблицу `feedback` тем же SQL-способом:
+//    create table feedback (
+//      id uuid primary key default gen_random_uuid(),
+//      device_id text not null,
+//      rating int,
+//      message text not null,
+//      created_at timestamptz default now()
+//    );
+//    alter table feedback enable row level security;
+//    create policy "Public insert" on feedback for insert with check (true);
+//    -- читать чужие отзывы с фронтенда не нужно, политики select нет — это нормально
+async function cloudSendFeedback({rating,message},onError){
+  if(!CLOUD_ENABLED)return false;
+  try{
+    await sbRequest('feedback',{
+      method:'POST',
+      prefer:'return=minimal',
+      body:JSON.stringify([{
+        device_id:getDeviceId(),
+        rating:rating||null,
+        message:(message||'').slice(0,2000)
+      }])
+    });
+    return true;
+  }catch(e){console.warn('cloudSendFeedback failed',e);if(onError)onError(e);return false;}
+}
+
+// ============================================================
+//  РЕФЕРАЛЬНАЯ СИСТЕМА
+// ============================================================
+// Чтобы включить атомарное начисление бонуса — создайте RPC-функцию в Supabase
+// (SQL Editor), она прибавляет XP без риска гонки при параллельных запросах:
+//    create or replace function reward_referrer(referrer_device_id text, bonus int)
+//    returns void language plpgsql as $$
+//    begin
+//      update leaders set xp = xp + bonus, updated_at = now()
+//      where device_id = referrer_device_id;
+//    end;
+//    $$;
+//    -- Делаем функцию вызываемой через anon-ключ (по умолчанию RPC закрыт):
+//    grant execute on function reward_referrer(text, int) to anon;
+async function cloudRewardReferrer(referrerDeviceId,bonusXp){
+  if(!CLOUD_ENABLED)return false;
+  try{
+    await sbRequest('rpc/reward_referrer',{
+      method:'POST',
+      prefer:'return=minimal',
+      body:JSON.stringify({referrer_device_id:referrerDeviceId,bonus:bonusXp})
+    });
+    return true;
+  }catch(e){console.warn('cloudRewardReferrer failed',e);return false;}
+}
+
+// ============================================================
+//  ОБЩИЙ ЧЕЛЛЕНДЖ КОМЬЮНИТИ
+// ============================================================
+// Один общий счётчик повторений на ВСЕХ пользователей, обновляется раз в неделю
+// вручную (смените week_key на новый, например '2026-W26', чтобы начать новую неделю).
+// Создайте таблицу и RPC-функцию:
+//    create table community_challenge (
+//      week_key text primary key,
+//      goal int not null,
+//      progress bigint not null default 0
+//    );
+//    insert into community_challenge (week_key, goal) values ('2026-W25', 100000);
+//    alter table community_challenge enable row level security;
+//    create policy "Public read" on community_challenge for select using (true);
+//
+//    create or replace function add_community_progress(wk text, amount int)
+//    returns void language plpgsql as $$
+//    begin
+//      update community_challenge set progress = progress + amount where week_key = wk;
+//    end;
+//    $$;
+//    grant execute on function add_community_progress(text, int) to anon;
+async function cloudFetchCommunityChallenge(weekKey,onError){
+  if(!CLOUD_ENABLED)return null;
+  try{
+    const rows=await sbRequest(`community_challenge?select=week_key,goal,progress&week_key=eq.${weekKey}&limit=1`,{method:'GET',prefer:''});
+    return rows?.[0]||null;
+  }catch(e){console.warn('cloudFetchCommunityChallenge failed',e);if(onError)onError(e);return null;}
+}
+async function cloudAddCommunityProgress(weekKey,amount){
+  if(!CLOUD_ENABLED||amount<=0)return false;
+  try{
+    await sbRequest('rpc/add_community_progress',{method:'POST',prefer:'return=minimal',body:JSON.stringify({wk:weekKey,amount})});
+    return true;
+  }catch(e){console.warn('cloudAddCommunityProgress failed',e);return false;}
+}
