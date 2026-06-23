@@ -488,8 +488,17 @@ function applyLanguage(lang){
   // Update TTS language
   // Persist
   localStorage.setItem('fp_lang',currentLang);
-  // Re-render dynamic UI that contains translated strings
-  renderExercises();renderPrograms();updateQuestUI();updateChallengeUI();updateAchUI();updatePRList();updateLB();updateProfileUI();
+  // Re-render all dynamic UI that contains translated strings
+  if(typeof buildExGrid==='function') buildExGrid();
+  if(typeof buildMoreExGrid==='function') buildMoreExGrid();
+  if(typeof buildProgsGrid==='function') buildProgsGrid();
+  if(typeof updateQuestUI==='function') updateQuestUI();
+  if(typeof updateChallengeUI==='function') updateChallengeUI();
+  if(typeof updateAchUI==='function') updateAchUI();
+  if(typeof updatePRList==='function') updatePRList();
+  if(typeof updateLB==='function') updateLB();
+  if(typeof updateProfileUI==='function') updateProfileUI();
+  if(typeof setEx==='function') setEx(currentEx);
 }
 
 // ============================================================
@@ -1789,7 +1798,7 @@ function setEx(k){
   const moreBtn=q('moreExBtn');
   if(moreBtn){
     if(!PRIMARY_EX.includes(k))moreBtn.innerHTML=`${e.emoji} ${exName(k)} <span class="more-ex-edit">✎</span>`;
-    else{const moreKeys=Object.keys(EX).filter(x=>!PRIMARY_EX.includes(x));moreBtn.innerHTML=`📋 Ещё <span id="moreExCount">${moreKeys.length}</span> упражнений`;}
+    else{const moreKeys=Object.keys(EX).filter(x=>!PRIMARY_EX.includes(x));moreBtn.innerHTML=`${t('moreExBtn')} <span id="moreExCount">${moreKeys.length}</span> ${t('moreExBtnSuffix')}`;}
   }
   hintFor(k);showDemo(k);coachCooldowns={};
   const pr=prRecords[k]||0;q('prStat').textContent=pr;
@@ -1813,7 +1822,7 @@ function showDemo(k){
   const gif=DEMO_GIFS[k];
   if(!gif){ov.style.display='none';return;} // гифки для этого упражнения пока нет — молча скрываем демо
   wrap.innerHTML=`<img src="${gif}" alt="${exName(k)||k}" style="width:100%;height:100%;object-fit:contain;">`;
-  if(cap)cap.textContent=DEMO_CAPTIONS[k]||'Техника выполнения';
+  if(cap)cap.textContent=DEMO_CAPTIONS[k]||t('demoCap');
   ov.style.display='flex';
   clearTimeout(showDemo._timer);
   showDemo._timer=setTimeout(()=>{ov.style.display='none';},8000);
@@ -2062,10 +2071,11 @@ window.onload=()=>{
   captureReferralOnLoad();
   registerSW();
   setTheme(localStorage.getItem('fp_theme')||'violet');
-  applyLanguage(localStorage.getItem('fp_lang')||'en');
   myRoomCode=localStorage.getItem('fp_room_code')||null;
   load();loadVoicePrefs();
   buildExGrid();buildMoreExGrid();buildProgsGrid();buildChartTabs();buildEmojiGrid();buildThemeGrid();
+  // Apply language AFTER grids are built so onclick handlers survive re-render
+  applyLanguage(localStorage.getItem('fp_lang')||'en');
   document.querySelectorAll('.chart-mode-btn').forEach(b=>b.addEventListener('click',()=>{
     chartMode=b.dataset.mode;
     document.querySelectorAll('.chart-mode-btn').forEach(x=>x.classList.toggle('active',x===b));
