@@ -9,7 +9,7 @@ let lastVoiceTs=0,angHistory=[],lastSmooth=null,repExtremum=null;
 const DEAD=2;
 let plankTime=0,plankActive=false,lastPlankTs=0,goalAchieved=false;
 let goalReps=10;
-let userWeight=70,userHeight=170,userName='Спортсмен',prefSide='auto',sens=1.0;
+let userWeight=70,userHeight=170,userName='Athlete',prefSide='auto',sens=1.0;
 let calibAngles={},prRecords={},achievements={};
 let xp=0,lvl=1,streak=0,maxStreak=0;
 let dayStreak=0,lastWorkoutDate=null; // streak по ДНЯМ (не путать со streak повторений выше)
@@ -43,75 +43,487 @@ function confetti(ms=2000){
 }
 
 // ============================================================
-//  i18n — переключение языка интерфейса (RU / EN)
 // ============================================================
-// Покрывает статичные подписи UI (кнопки, заголовки, лейблы). Динамические
-// тексты (голосовые подсказки, большинство toast-сообщений, FAQ) пока
-// остаются на русском — это сознательный компромисс, чтобы не рисковать
-// стабильностью основной логики массовой правкой сотен строк разом.
-// Чтобы добавить новый переводимый элемент: пометь его data-i18n="key" в HTML
-// и добавь ключ в оба языка ниже.
-let currentLang='ru';
+//  i18n — full bilingual UI (RU / EN)
+// ============================================================
+// All UI strings live in I18N below. Static HTML elements use
+// data-i18n="key". Dynamic strings use t('key', {vars}).
+// To add a new string: add the key to BOTH ru and en objects,
+// then call t('key') in JS or add data-i18n="key" in HTML.
+let currentLang='en';
+
+// ============================================================
+//  FULL i18n DICTIONARY  — add new keys to BOTH languages
+// ============================================================
 const I18N={
   ru:{
-    appName:'FitPulse',menuTitle:'Меню',tabTrain:'🏋️ Тренировка',tabProfile:'👤 Профиль',tabProgress:'📊 Прогресс',tabPrograms:'📋 Программы',tabCommunity:'🏆 Рейтинг',
-    exerciseTitle:'Упражнение',goalLabel:'🎯 Цель:',modeCam:'📷 Камера',modeVid:'🎥 Видео',
-    btnStart:'🚀 СТАРТ',btnReset:'🔄 Сброс',btnPause:'⏸️ Пауза',btnStop:'⏹️ Стоп',btnHiit:'⚡ HIIT',btnTimer:'⏱️ Таймер',btnVoice:'🎙️ Голос',
-    profileSettings:'Настройки профиля',nameLabel:'Имя',weightLabel:'Вес (кг)',heightLabel:'Рост (см)',btnSave:'💾 Сохранить',
-    personalRecords:'Личные рекорды',achievementsTitle:'🏅 Достижения',btnResetAll:'⚠️ Сбросить весь прогресс',
-    leaderboardTitle:'🏆 Таблица лидеров',inviteTitle:'🎁 Пригласи друга',btnInvite:'🔗 Поделиться ссылкой',
-    settingsTitle:'⚙️ Настройки',faqTitle:'❓ Как пользоваться',feedbackTitle:'💬 Обратная связь',
+    // ---------- tabs ----------
+    tabTrain:'🏋️ Тренировка',tabProfile:'👤 Профиль',tabProgress:'📊 Прогресс',
+    tabPrograms:'📋 Программы',tabCommunity:'🏆 Рейтинг',
+    // ---------- train tab ----------
+    exerciseTitle:'Упражнение',goalLabel:'🎯 Цель:',
+    modeCam:'📷 Камера',modeVid:'🎥 Видео',
+    uploadBtn:'📁 Загрузить',demoCap:'Техника выполнения',
+    debugReady:'Готово',hintReplayTitle:'Озвучить расположение камеры',
+    sessTime:'Время',sessReps:'Повт.',sessCal:'Калорий',sessStreak:'Серия',
+    hiitPhaseWork:'РАБОТА',hiitPhaseRest:'ОТДЫХ',
+    calLabel:'🔥 Калории',streakLabel:'⚡ Серия',recordLabel:'🏆 Рекорд',
+    btnStart:'🚀 СТАРТ',btnReset:'🔄 Сброс',btnPause:'⏸️ Пауза',btnStop:'⏹️ Стоп',
+    btnHiit:'⚡ HIIT',btnTimer:'⏱️ Таймер',btnVoice:'🎙️ Голос',
+    questTitle:'Задания на сегодня',challengeTitle:'Вызов дня',challengeLoading:'Загрузка...',
+    streakDaysSuffix:'дней',streakDaysSub:'подряд с тренировкой',
+    moreExBtn:'📋 Ещё',moreExBtnSuffix:'упражнений',
+    // ---------- profile tab ----------
+    defaultName:'Спортсмен',defaultTitle:'Уровень 1 • Новичок',
+    psRepsLabel:'Повторений',psCalLabel:'Калорий',psStreakLabel:'Макс. серия',psLevelLabel:'Уровень',
+    profileSettings:'Настройки профиля',nameLabel:'Имя',
+    weightLabel:'Вес (кг)',heightLabel:'Рост (см)',btnSave:'💾 Сохранить',
+    personalRecords:'Личные рекорды',noRecords:'Нет рекордов',
+    achievementsTitle:'🏅 Достижения',btnResetAll:'⚠️ Сбросить весь прогресс',
+    // ---------- progress tab ----------
+    progressChartTitle:'График прогресса',chartModeReps:'📊 Повторения',chartModeTech:'🎯 Техника',
+    chartNoData:'Нет данных',
+    controlsTitle:'Управление',btnSaveSet:'💾 Сохранить подход',btnHistory:'📜 История',
+    btnExport:'📤 CSV',btnClearHist:'🗑️ Очистить',
+    historyTitle:'История тренировок',
+    // ---------- programs tab ----------
+    programsTitle:'Программы тренировок',btnStartStep:'▶️ Начать шаг',
+    btnNextStep:'⏭️ Следующий',btnCancelProg:'✕',
+    // ---------- HIIT card ----------
+    hiitCardTitle:'⚡ HIIT Интервалы',hiitWorkLabel:'Работа (сек)',
+    hiitRestLabel:'Отдых (сек)',hiitRoundsLabel:'Раундов',btnStartHiit:'⚡ Запустить HIIT',
+    // ---------- community tab ----------
+    communityChallTitle:'🌍 Челлендж недели — все вместе',communityPctSuffix:'от общей цели',
+    teamTitle:'👥 Команда друзей',
+    teamDesc:'Создайте комнату или присоединитесь по коду — соревнуйтесь только с теми, кого знаете',
+    teamNamePlaceholder:'Название команды',btnCreateRoom:'Создать',
+    teamCodePlaceholder:'Код комнаты',btnJoinRoom:'Войти',
+    teamCodeLabel:'Код:',btnShareRoom:'🔗 Поделиться',btnLeaveRoom:'Покинуть команду',
+    referralTitle:'🎁 Пригласи друга',
+    referralDesc:'Получите',referralDescMid:'когда друг по вашей ссылке завершит первую тренировку',
+    btnInvite:'🔗 Поделиться ссылкой',
+    leaderboardTitle:'🏆 Таблица лидеров',btnPublish:'🌍 Опубликовать мой результат',
+    lbPrivacyNote:'🔒 Фото-аватары видны только вам — в общую таблицу лидеров публикуется эмодзи для приватности',
+    notifTitle:'🔔 Уведомления',btnNotif:'🔔 Разрешить уведомления',
+    notifDesc:'Используется для уведомления об окончании таймера тренировки.',
+    shareTitle:'📤 Поделиться результатом',btnShare:'📤 Поделиться',
+    updateTitle:'🔄 Обновление приложения',
+    updateDesc:'Если интерфейс выглядит устаревшим — нажмите кнопку ниже. Это сбросит кэш и загрузит свежую версию.',
+    btnForceUpdate:'🔄 Обновить приложение',
+    // ---------- modals ----------
+    settingsTitle:'⚙️ Настройки',faqTitle:'❓ Как пользоваться',
+    feedbackTitle:'💬 Обратная связь',menuTitle:'Меню',
+    themeTitle:'🎨 Тема',changelogTitle:'✨ Что нового',
+    allExTitle:'📋 Все упражнения',avatarTitle:'🖼️ Аватар',
+    videoSoonTitle:'🎥 Видео-анализ',videoSoonHead:'Ещё в разработке',
+    videoSoonBody:'Анализ загруженных видео пока не работает стабильно. Мы дорабатываем эту функцию и оповестим вас, когда она будет готова. Пока используйте режим «📷 Камера» — он полностью рабочий.',
+    settingsSideLabel:'Приоритетная сторона',sideAuto:'Авто',sideLeft:'Левая',sideRight:'Правая',
+    settingsSensLabel:'Чувствительность:',btnCalib:'📏 Калибровка',
+    voiceDivider:'🎙️ Голосовой тренер',voiceToggleLabel:'Голосовые подсказки',
+    voiceRateLabel:'Скорость речи:',voiceVolLabel:'Громкость',
+    btnTestVoice:'🔊 Проверить голос',alwaysHintLabel:'Подсказка по камере перед каждым стартом',
+    hubSettingsLabel:'⚙️ Настройки',hubSettingsSub:'Камера, голос, отображение',
+    hubFaqLabel:'❓ Как пользоваться',hubFaqSub:'FAQ и приветствие',
+    hubFeedbackLabel:'💬 Обратная связь',hubFeedbackSub:'Отзыв, идея или вопрос',
+    hubWhatsNewLabel:'✨ Что нового',hubWhatsNewSub:'Последние обновления и функции',
+    feedbackPlaceholder:'Расскажите, что понравилось или что улучшить...',
+    feedbackRatingLabel:'Оценка',btnSendFeedback:'📨 Отправить отзыв',
+    feedbackNote:'Отзывы сохраняются и помогают делать FitPulse лучше',
+    contactDivider:'📬 Связаться напрямую',contactDesc:'Есть идея для приложения или нашли баг? Напишите на почту проекта:',
+    btnContactEmail:'✉️ Написать на почту',btnFaqBack:'←',btnSettingsBack:'←',btnFeedbackBack:'←',
+    faqReplayBtn:'🎬 Показать приветствие заново',faqFreqTitle:'Частые вопросы',
+    avatarUploadHint:'Нажмите чтобы загрузить фото',avatarOrEmoji:'— или выберите эмодзи —',
+    langLabel:'Language / Язык',
+    // ---------- onboarding ----------
+    onboardSub:'AI-тренер с анализом движений в реальном времени',
+    onboardStep1Title:'Выберите упражнение',onboardStep1:'и нажмите «Старт» — камера отследит движения',
+    onboardStep2Title:'Встаньте боком',onboardStep2:'к камере, всё тело в кадре',
+    onboardStep3Title:'Зарабатывайте XP',onboardStep3:'выполняйте задания, бейте рекорды!',
+    levelLabel:'Ваш уровень подготовки?',
+    levelBeginner:'Новичок',levelIntermediate:'Средний',levelAdvanced:'Продвинутый',
+    onboardBtn:'Начать 🚀',
+    // ---------- exercises ----------
+    ex_pushup:'Отжимания',ex_squat:'Приседания',ex_plank:'Планка',
+    ex_situp:'Пресс',ex_lunge:'Выпады',ex_burpee:'Бёрпи',ex_pullup:'Подтягивания',
+    ex_meta_pushup:'Грудь, трицепс',ex_meta_squat:'Квадрицепс, ягодицы',
+    ex_meta_plank:'Кор, пресс',ex_meta_situp:'Пресс',ex_meta_lunge:'Ноги, баланс',
+    ex_meta_burpee:'Всё тело',ex_meta_pullup:'Спина, бицепс',
+    // ---------- programs ----------
+    prog_beginner:'Начинающий',prog_beginner_meta:'7 дней • базовый',
+    prog_strength:'Сила',prog_strength_meta:'5 дней • интенсивный',
+    prog_cardio:'Кардио',prog_cardio_meta:'4 дня • сжигание',
+    prog_core:'Кор & Пресс',prog_core_meta:'6 дней • пресс',
+    progStep:'Шаг',
+    // ---------- achievements ----------
+    ach_first:'Первое повторение',ach_ten:'10 за подход',ach_fifty:'50 всего',
+    ach_hundred:'100 всего',ach_fiveHundred:'500 всего',ach_plankMaster:'Планка 60с',
+    ach_streak10:'Серия 10',ach_streak20:'Серия 20',ach_cal100:'100 калорий',
+    ach_lvl5:'Уровень 5',ach_lvl10:'Уровень 10',ach_variety:'5 упражнений',
+    // ---------- level titles ----------
+    lvl_0:'Новичок',lvl_1:'Атлет',lvl_2:'Боец',lvl_3:'Чемпион',lvl_4:'Легенда',
+    // ---------- hints ----------
+    hint_pushup:'💡 Упор лёжа, камера сбоку. Локти сгибайте до 90°.',
+    hint_squat:'💡 Боком к камере, ноги шире плеч. Колени до 90°, спина прямая.',
+    hint_plank:'💡 На предплечьях, тело прямое. Камера сбоку.',
+    hint_situp:'💡 Лёжа, колени согнуты. Корпус до 45°.',
+    hint_lunge:'💡 Боком, шаг вперёд, колено 90°.',
+    hint_burpee:'💡 Присед → упор → отжимание → прыжок.',
+    hint_pullup:'💡 Перекладина, камера сбоку (не сзади) — так AI точнее видит сгибание локтя.',
+    hintFallback:'Встаньте так, чтобы тело полностью было в кадре.',
+    // ---------- camera voice hints ----------
+    camhint_pushup:'Поставьте телефон на пол сбоку от себя, на уровне груди, чтобы видно было всё тело в профиль',
+    camhint_squat:'Поставьте телефон на пол перед собой, на расстоянии двух метров, чтобы в кадре были ноги и корпус целиком',
+    camhint_plank:'Поставьте телефон сбоку на уровне пола, чтобы камера видела вас в профиль с головы до пят',
+    camhint_situp:'Поставьте телефон сбоку на уровне пола, чтобы видеть корпус и ноги в профиль',
+    camhint_lunge:'Поставьте телефон сбоку, на расстоянии двух метров, чтобы видеть ноги в профиль во время выпада',
+    camhint_burpee:'Поставьте телефон сбоку на расстоянии двух-трёх метров, чтобы видеть всё тело при движении вниз и вверх',
+    camhint_pullup:'Поставьте телефон сбоку от турника, не сзади — так искусственный интеллект точнее видит сгибание локтя и считает повторения',
+    // ---------- technique coach cues ----------
+    cue_squat_back:'Спина округляется, держите прямо!',
+    cue_squat_knee:'Колени не должны выходить за носки',
+    cue_squat_deep:'Отличная глубина приседа!',
+    cue_pushup_hip:'Не провисайте в пояснице, держите корпус прямо',
+    cue_pushup_depth:'Хорошая амплитуда!',
+    cue_plank_high:'Таз слишком высоко, опуститесь',
+    cue_plank_low:'Таз провисает, подтяните корпус',
+    cue_situp_neck:'Не тяните шею руками, работайте корпусом',
+    cue_lunge_knee:'Колено впереди носка — отступите назад',
+    cue_burpee_form:'Хороший темп, продолжайте!',
+    cue_breathing:'Не забывайте дышать ровно',
+    // ---------- quest templates ----------
+    quest_pushup:'Сделайте {n} отжиманий',quest_squat:'Сделайте {n} приседаний',
+    quest_situp:'Сделайте {n} раз на пресс',quest_lunge:'Сделайте {n} выпадов',
+    quest_burpee:'Сделайте {n} бёрпи',quest_pullup:'Сделайте {n} подтягиваний',
+    quest_plank:'Продержите планку {n} секунд (суммарно)',
+    chall_pushup:'{n} отжиманий за {t} сек',chall_squat:'{n} приседаний за {t} сек',
+    chall_burpee:'{n} бёрпи за {t} сек',chall_situp:'{n} на пресс за {t} сек',
+    chall_lunge:'{n} выпадов за {t} сек',
+    // ---------- toast / speak messages ----------
+    toast_levelUp:'🎉 Уровень {n}!',speak_levelUp:'Уровень {n}!',
+    speak_xpTip:'На высоких уровнях опыт за одно и то же упражнение становится меньше. Чередуйте упражнения для максимального прогресса',
+    toast_xpTip:'💡 Меняйте упражнения для максимального XP',
+    speak_streak:'Серия {n}!',
+    toast_saved:'💾 Сохранено',toast_histCleared:'🗑️ История очищена',
+    speak_achiev:'Ачивка: {n}',toast_achiev:'🏅 {n}',
+    toast_questDone:'✅ {desc}! +{xp} XP',speak_questDone:'Задание выполнено!',
+    toast_challDone:'✅ Вызов! +{xp} XP',toast_challTimeout:'⏰ Время вышло, попробуйте завтра',
+    speak_xpDown:'Попробуйте другое упражнение — опыт за повторы снижается',
+    toast_xpDown:'📉 Опыт снижен — смените упражнение для полного XP',
+    speak_firstRecord:'Новый рекорд!',toast_firstRecord:'🏆 Первый личный рекорд!',
+    speak_newRecord:'Новый рекорд! На {diff} больше прошлого!',
+    toast_newRecord:'🏆 Рекорд! {reps} — это на {diff} больше прошлых {prev}',
+    toast_plankRecord:'🏆 Рекорд планки! {cur}с — на {diff}с больше прошлых {prev}с',
+    speak_inactive:'Всё хорошо? Если тяжело — можно сделать паузу',
+    toast_inactive:'💛 Долго не двигаетесь — всё в порядке?',
+    speak_poseLost:'Потерял вас из вида — всё хорошо? Остановите тренировку, если нужно',
+    speak_reset:'Сброшено',speak_goal:'Цель достигнута!',
+    toast_aiLoading:'Загрузка AI-модели...',
+    toast_camReady:'📷 Камера готова',speak_camReady:'Камера готова',
+    debugCamActive:'Камера активна',debugError:'Ошибка: ',
+    toast_noVideo:'Выберите видео — нажмите «📁 Загрузить»',
+    toast_videoPrep:'⏳ Подготовка видео...',toast_videoAnalyse:'🎥 Анализ видео',
+    toast_badPosture_4:'💛 4 тренировки за день — отличная активность, но не забывайте отдыхать',
+    speak_badPosture_4:'Уже 4 подхода сегодня — не забывайте про отдых, мышцам тоже нужно восстановление',
+    toast_overTrain:'⚠️ Возможно, на сегодня уже достаточно — дайте телу восстановиться',
+    speak_overTrain:'6 тренировок за один день — это много. Перетренированность замедляет прогресс, а не ускоряет его',
+    speak_dayStreak:'{n} дней подряд! Невероятная дисциплина!',toast_dayStreak:'🔥 Серия {n} дней!',
+    toast_workoutSaved:'✅ Тренировка сохранена',toast_stop:'Стоп',
+    speak_pause:'Пауза',speak_resume:'Продолжаем',
+    speak_hiitRest:'Отдых!',speak_hiitWork:'Работаем!',
+    speak_hiitDone:'HIIT завершён!',toast_hiitDone:'🏆 HIIT завершён!',
+    toast_progStep:'Шаг {step}/{total}',toast_progDone:'🏆 Программа завершена!',
+    toast_timerDone:'⏰ Готово!',notif_timerDone:'Тренировка окончена!',speak_timerDone:'Время вышло!',
+    toast_avatarSaved:'Аватар обновлён!',
+    toast_published:'🌍 Результат опубликован в рейтинге',toast_publishError:'❌ Ошибка публикации: ',
+    toast_noVoice:'Голос не поддерживается',toast_voiceError:'Ошибка голоса',
+    toast_listening:'🎙️ Слушаю...',speak_notUnderstood:'Не понял',
+    toast_inviteBonus:'🎁 Вы пришли по приглашению — бонус другу придёт после вашей первой тренировки!',
+    toast_linkCopied:'🔗 Ссылка скопирована!',toast_codeCopied:'🔗 Код скопирован!',toast_copied:'Скопировано!',
+    toast_roomFail:'❌ Не получилось создать комнату',
+    toast_roomCreated:'✅ Комната создана! Код: {code}',
+    toast_roomCodeEmpty:'Введите код комнаты',toast_roomNotFound:'❌ Комната не найдена — проверьте код',
+    toast_roomJoined:'✅ Вы присоединились к команде!',toast_roomLeft:'Вы покинули команду (прогресс в комнате сохранён)',
+    toast_profileSaved:'💾 Профиль сохранён',
+    toast_appUpdate:'🔄 Новая версия приложения — обновляем...',
+    toast_goal:'🎯 Цель: {n}',toast_camMode:'📷 Камера',
+    toast_noHint:'Нет голосовой подсказки для этого упражнения',
+    toast_hiitStart:'⚡ HIIT: {n} раундов',toast_timerStart:'⏱️ Таймер: {m} мин',
+    toast_calibStart:'Встаньте ровно 2 сек...',toast_calibDone:'✅ Калибровка выполнена',
+    toast_voiceOn:'🔊 Голос включён',toast_voiceOff:'🔇 Голос выключен',
+    toast_noSpeech:'❌ Браузер не поддерживает синтез речи',
+    toast_voiceDisabled:'⚠️ Голос выключен — включите тумблер выше',
+    toast_noCloud:'⚠️ Облако не настроено, отзыв не отправлен',
+    toast_feedbackSent:'✅ Отзыв отправлен, спасибо!',
+    toast_resetConfirm:'Сбросить ВЕСЬ прогресс? (отжмите если нет)',
+    plankBadge_wrong:'❌ Неправильно',speak_poseLost:'Поза сбита',
+    speak_voiceTest:'Голосовой тренер работает. Отличная тренировка!',
+    share_text:'🏆 FitPulse\nУровень {lvl} · {xp}/{nextXp} XP\n💪 Всего повторений: {reps}\n🔥 Калорий: {cal}\n⚡ Макс. серия: {streak}\n\nЗаходи, попробуй сам 👉 {url}',
+    invite_text:'💪 Присоединяйся ко мне в FitPulse — AI-тренер, который считает повторения и следит за техникой через камеру!\n\n{link}',
   },
   en:{
-    appName:'FitPulse',menuTitle:'Menu',tabTrain:'🏋️ Workout',tabProfile:'👤 Profile',tabProgress:'📊 Progress',tabPrograms:'📋 Programs',tabCommunity:'🏆 Leaderboard',
-    exerciseTitle:'Exercise',goalLabel:'🎯 Goal:',modeCam:'📷 Camera',modeVid:'🎥 Video',
-    btnStart:'🚀 START',btnReset:'🔄 Reset',btnPause:'⏸️ Pause',btnStop:'⏹️ Stop',btnHiit:'⚡ HIIT',btnTimer:'⏱️ Timer',btnVoice:'🎙️ Voice',
-    profileSettings:'Profile settings',nameLabel:'Name',weightLabel:'Weight (kg)',heightLabel:'Height (cm)',btnSave:'💾 Save',
-    personalRecords:'Personal records',achievementsTitle:'🏅 Achievements',btnResetAll:'⚠️ Reset all progress',
-    leaderboardTitle:'🏆 Leaderboard',inviteTitle:'🎁 Invite a friend',btnInvite:'🔗 Share link',
-    settingsTitle:'⚙️ Settings',faqTitle:'❓ How to use',feedbackTitle:'💬 Feedback',
+    // ---------- tabs ----------
+    tabTrain:'🏋️ Workout',tabProfile:'👤 Profile',tabProgress:'📊 Progress',
+    tabPrograms:'📋 Programs',tabCommunity:'🏆 Leaderboard',
+    // ---------- train tab ----------
+    exerciseTitle:'Exercise',goalLabel:'🎯 Goal:',
+    modeCam:'📷 Camera',modeVid:'🎥 Video',
+    uploadBtn:'📁 Upload',demoCap:'Technique guide',
+    debugReady:'Ready',hintReplayTitle:'Read camera position tip',
+    sessTime:'Time',sessReps:'Reps',sessCal:'Calories',sessStreak:'Streak',
+    hiitPhaseWork:'WORK',hiitPhaseRest:'REST',
+    calLabel:'🔥 Calories',streakLabel:'⚡ Streak',recordLabel:'🏆 Record',
+    btnStart:'🚀 START',btnReset:'🔄 Reset',btnPause:'⏸️ Pause',btnStop:'⏹️ Stop',
+    btnHiit:'⚡ HIIT',btnTimer:'⏱️ Timer',btnVoice:'🎙️ Voice',
+    questTitle:"Today's quests",challengeTitle:'Daily challenge',challengeLoading:'Loading...',
+    streakDaysSuffix:'days',streakDaysSub:'workout streak',
+    moreExBtn:'📋 More',moreExBtnSuffix:'exercises',
+    // ---------- profile tab ----------
+    defaultName:'Athlete',defaultTitle:'Level 1 • Beginner',
+    psRepsLabel:'Reps',psCalLabel:'Calories',psStreakLabel:'Best streak',psLevelLabel:'Level',
+    profileSettings:'Profile settings',nameLabel:'Name',
+    weightLabel:'Weight (kg)',heightLabel:'Height (cm)',btnSave:'💾 Save',
+    personalRecords:'Personal records',noRecords:'No records yet',
+    achievementsTitle:'🏅 Achievements',btnResetAll:'⚠️ Reset all progress',
+    // ---------- progress tab ----------
+    progressChartTitle:'Progress chart',chartModeReps:'📊 Reps',chartModeTech:'🎯 Technique',
+    chartNoData:'No data',
+    controlsTitle:'Controls',btnSaveSet:'💾 Save set',btnHistory:'📜 History',
+    btnExport:'📤 CSV',btnClearHist:'🗑️ Clear',
+    historyTitle:'Workout history',
+    // ---------- programs tab ----------
+    programsTitle:'Workout programs',btnStartStep:'▶️ Start step',
+    btnNextStep:'⏭️ Next',btnCancelProg:'✕',
+    // ---------- HIIT card ----------
+    hiitCardTitle:'⚡ HIIT Intervals',hiitWorkLabel:'Work (sec)',
+    hiitRestLabel:'Rest (sec)',hiitRoundsLabel:'Rounds',btnStartHiit:'⚡ Start HIIT',
+    // ---------- community tab ----------
+    communityChallTitle:'🌍 Weekly challenge — together',communityPctSuffix:'of goal',
+    teamTitle:'👥 Friends Team',
+    teamDesc:'Create a room or join by code — compete only with people you know',
+    teamNamePlaceholder:'Team name',btnCreateRoom:'Create',
+    teamCodePlaceholder:'Room code',btnJoinRoom:'Join',
+    teamCodeLabel:'Code:',btnShareRoom:'🔗 Share',btnLeaveRoom:'Leave team',
+    referralTitle:'🎁 Invite a friend',
+    referralDesc:'Get',referralDescMid:'when a friend completes their first workout via your link',
+    btnInvite:'🔗 Share invite link',
+    leaderboardTitle:'🏆 Leaderboard',btnPublish:'🌍 Publish my result',
+    lbPrivacyNote:'🔒 Photo avatars are only visible to you — the leaderboard shows emoji for privacy',
+    notifTitle:'🔔 Notifications',btnNotif:'🔔 Allow notifications',
+    notifDesc:'Used to notify you when your workout timer ends.',
+    shareTitle:'📤 Share result',btnShare:'📤 Share',
+    updateTitle:'🔄 App update',
+    updateDesc:"If the interface looks outdated — click the button below. It will clear the cache and load a fresh version.",
+    btnForceUpdate:'🔄 Update app',
+    // ---------- modals ----------
+    settingsTitle:'⚙️ Settings',faqTitle:'❓ How to use',
+    feedbackTitle:'💬 Feedback',menuTitle:'Menu',
+    themeTitle:'🎨 Theme',changelogTitle:'✨ What\'s New',
+    allExTitle:'📋 All exercises',avatarTitle:'🖼️ Avatar',
+    videoSoonTitle:'🎥 Video analysis',videoSoonHead:'Still in development',
+    videoSoonBody:"Video upload analysis isn't stable yet. We're working on it and will notify you when it's ready. For now use 📷 Camera mode — it's fully functional.",
+    settingsSideLabel:'Preferred side',sideAuto:'Auto',sideLeft:'Left',sideRight:'Right',
+    settingsSensLabel:'Sensitivity:',btnCalib:'📏 Calibrate',
+    voiceDivider:'🎙️ Voice coach',voiceToggleLabel:'Voice prompts',
+    voiceRateLabel:'Speech rate:',voiceVolLabel:'Volume',
+    btnTestVoice:'🔊 Test voice',alwaysHintLabel:'Camera tip before each start',
+    hubSettingsLabel:'⚙️ Settings',hubSettingsSub:'Camera, voice, display',
+    hubFaqLabel:'❓ How to use',hubFaqSub:'FAQ and welcome guide',
+    hubFeedbackLabel:'💬 Feedback',hubFeedbackSub:'Review, idea or question',
+    hubWhatsNewLabel:'✨ What\'s New',hubWhatsNewSub:'Latest updates and features',
+    feedbackPlaceholder:'Tell us what you liked or what could be improved...',
+    feedbackRatingLabel:'Rating',btnSendFeedback:'📨 Send feedback',
+    feedbackNote:'Reviews are saved and help make FitPulse better',
+    contactDivider:'📬 Contact directly',contactDesc:'Have an idea or found a bug? Email the project:',
+    btnContactEmail:'✉️ Send email',btnFaqBack:'←',btnSettingsBack:'←',btnFeedbackBack:'←',
+    faqReplayBtn:'🎬 Show welcome guide again',faqFreqTitle:'Frequently asked questions',
+    avatarUploadHint:'Tap to upload photo',avatarOrEmoji:'— or choose an emoji —',
+    langLabel:'Language / Язык',
+    // ---------- onboarding ----------
+    onboardSub:'AI trainer with real-time movement analysis',
+    onboardStep1Title:'Choose an exercise',onboardStep1:'and press Start — the camera will track your movements',
+    onboardStep2Title:'Stand sideways',onboardStep2:'to the camera, full body in frame',
+    onboardStep3Title:'Earn XP',onboardStep3:'complete quests, break records!',
+    levelLabel:'Your fitness level?',
+    levelBeginner:'Beginner',levelIntermediate:'Intermediate',levelAdvanced:'Advanced',
+    onboardBtn:'Let\'s go 🚀',
+    // ---------- exercises ----------
+    ex_pushup:'Push-ups',ex_squat:'Squats',ex_plank:'Plank',
+    ex_situp:'Sit-ups',ex_lunge:'Lunges',ex_burpee:'Burpees',ex_pullup:'Pull-ups',
+    ex_meta_pushup:'Chest, triceps',ex_meta_squat:'Quads, glutes',
+    ex_meta_plank:'Core, abs',ex_meta_situp:'Abs',ex_meta_lunge:'Legs, balance',
+    ex_meta_burpee:'Full body',ex_meta_pullup:'Back, biceps',
+    // ---------- programs ----------
+    prog_beginner:'Beginner',prog_beginner_meta:'7 days • fundamentals',
+    prog_strength:'Strength',prog_strength_meta:'5 days • intense',
+    prog_cardio:'Cardio',prog_cardio_meta:'4 days • fat burn',
+    prog_core:'Core & Abs',prog_core_meta:'6 days • abs',
+    progStep:'Step',
+    // ---------- achievements ----------
+    ach_first:'First rep',ach_ten:'10 in a set',ach_fifty:'50 total',
+    ach_hundred:'100 total',ach_fiveHundred:'500 total',ach_plankMaster:'Plank 60s',
+    ach_streak10:'Streak 10',ach_streak20:'Streak 20',ach_cal100:'100 calories',
+    ach_lvl5:'Level 5',ach_lvl10:'Level 10',ach_variety:'5 exercises',
+    // ---------- level titles ----------
+    lvl_0:'Beginner',lvl_1:'Athlete',lvl_2:'Fighter',lvl_3:'Champion',lvl_4:'Legend',
+    // ---------- hints ----------
+    hint_pushup:'💡 Plank position, camera to the side. Bend elbows to 90°.',
+    hint_squat:'💡 Side on to camera, feet shoulder-width. Knees to 90°, back straight.',
+    hint_plank:'💡 On forearms, body straight. Camera to the side.',
+    hint_situp:'💡 Lying down, knees bent. Lift torso to 45°.',
+    hint_lunge:'💡 Side on, step forward, knee at 90°.',
+    hint_burpee:'💡 Squat → plank → push-up → jump.',
+    hint_pullup:'💡 Pull-up bar, camera to the side (not behind) — AI tracks elbow bend more accurately.',
+    hintFallback:'Stand so your whole body is fully in frame.',
+    // ---------- camera voice hints ----------
+    camhint_pushup:'Place your phone on the floor to your side at chest height so your whole body is visible in profile',
+    camhint_squat:'Place your phone on the floor about two metres in front of you so your legs and torso are fully in frame',
+    camhint_plank:'Place your phone to your side at floor level so the camera sees you in profile from head to toe',
+    camhint_situp:'Place your phone to your side at floor level to see your torso and legs in profile',
+    camhint_lunge:'Place your phone to your side about two metres away so your legs are visible in profile during the lunge',
+    camhint_burpee:'Place your phone two to three metres to your side so your whole body is visible moving up and down',
+    camhint_pullup:'Place your phone to the side of the pull-up bar, not behind — the AI tracks elbow bend more accurately this way',
+    // ---------- technique coach cues ----------
+    cue_squat_back:'Back is rounding — keep it straight!',
+    cue_squat_knee:'Knees should not go past your toes',
+    cue_squat_deep:'Great squat depth!',
+    cue_pushup_hip:'Don\'t let your hips sag — keep your core tight',
+    cue_pushup_depth:'Good range of motion!',
+    cue_plank_high:'Hips too high — lower them',
+    cue_plank_low:'Hips sagging — pull your core up',
+    cue_situp_neck:'Don\'t pull your neck with your hands — use your core',
+    cue_lunge_knee:'Knee is past your toe — step back further',
+    cue_burpee_form:'Good pace — keep it up!',
+    cue_breathing:'Remember to breathe steadily',
+    // ---------- quest templates ----------
+    quest_pushup:'Do {n} push-ups',quest_squat:'Do {n} squats',
+    quest_situp:'Do {n} sit-ups',quest_lunge:'Do {n} lunges',
+    quest_burpee:'Do {n} burpees',quest_pullup:'Do {n} pull-ups',
+    quest_plank:'Hold plank for {n} seconds (total)',
+    chall_pushup:'{n} push-ups in {t} sec',chall_squat:'{n} squats in {t} sec',
+    chall_burpee:'{n} burpees in {t} sec',chall_situp:'{n} sit-ups in {t} sec',
+    chall_lunge:'{n} lunges in {t} sec',
+    // ---------- toast / speak messages ----------
+    toast_levelUp:'🎉 Level {n}!',speak_levelUp:'Level {n}!',
+    speak_xpTip:'At higher levels XP per rep decreases. Mix up your exercises for maximum progress',
+    toast_xpTip:'💡 Switch exercises for maximum XP',
+    speak_streak:'Streak {n}!',
+    toast_saved:'💾 Saved',toast_histCleared:'🗑️ History cleared',
+    speak_achiev:'Achievement: {n}',toast_achiev:'🏅 {n}',
+    toast_questDone:'✅ {desc}! +{xp} XP',speak_questDone:'Quest complete!',
+    toast_challDone:'✅ Challenge done! +{xp} XP',toast_challTimeout:'⏰ Time is up, try again tomorrow',
+    speak_xpDown:'Try a different exercise — XP per rep is decreasing',
+    toast_xpDown:'📉 XP reduced — switch exercises for full XP',
+    speak_firstRecord:'New record!',toast_firstRecord:'🏆 First personal record!',
+    speak_newRecord:'New record! {diff} more than before!',
+    toast_newRecord:'🏆 Record! {reps} — that\'s {diff} more than your previous {prev}',
+    toast_plankRecord:'🏆 Plank record! {cur}s — {diff}s more than your previous {prev}s',
+    speak_inactive:'Everything okay? If it\'s tough — feel free to pause',
+    toast_inactive:'💛 No movement for a while — are you okay?',
+    speak_poseLost:'Lost sight of you — are you okay? Stop the workout if you need to',
+    speak_reset:'Reset',speak_goal:'Goal reached!',
+    toast_aiLoading:'Loading AI model...',
+    toast_camReady:'📷 Camera ready',speak_camReady:'Camera ready',
+    debugCamActive:'Camera active',debugError:'Error: ',
+    toast_noVideo:'Select a video — tap 📁 Upload',
+    toast_videoPrep:'⏳ Preparing video...',toast_videoAnalyse:'🎥 Analysing video',
+    toast_badPosture_4:'💛 4 workouts today — great effort, but remember to rest',
+    speak_badPosture_4:'4 sets today already — don\'t forget to rest, muscles need recovery too',
+    toast_overTrain:'⚠️ Maybe that\'s enough for today — give your body time to recover',
+    speak_overTrain:'6 workouts in one day is too much. Overtraining slows progress, not speeds it up',
+    speak_dayStreak:'{n} days in a row! Incredible discipline!',toast_dayStreak:'🔥 {n}-day streak!',
+    toast_workoutSaved:'✅ Workout saved',toast_stop:'Stop',
+    speak_pause:'Pause',speak_resume:'Let\'s go',
+    speak_hiitRest:'Rest!',speak_hiitWork:'Work!',
+    speak_hiitDone:'HIIT complete!',toast_hiitDone:'🏆 HIIT complete!',
+    toast_progStep:'Step {step}/{total}',toast_progDone:'🏆 Program complete!',
+    toast_timerDone:'⏰ Done!',notif_timerDone:'Workout done!',speak_timerDone:'Time is up!',
+    toast_avatarSaved:'Avatar updated!',
+    toast_published:'🌍 Result published to leaderboard',toast_publishError:'❌ Publish error: ',
+    toast_noVoice:'Voice not supported',toast_voiceError:'Voice error',
+    toast_listening:'🎙️ Listening...',speak_notUnderstood:'Not understood',
+    toast_inviteBonus:'🎁 You joined via invite — your friend will get a bonus after your first workout!',
+    toast_linkCopied:'🔗 Link copied!',toast_codeCopied:'🔗 Code copied!',toast_copied:'Copied!',
+    toast_roomFail:'❌ Failed to create room',
+    toast_roomCreated:'✅ Room created! Code: {code}',
+    toast_roomCodeEmpty:'Enter room code',toast_roomNotFound:'❌ Room not found — check the code',
+    toast_roomJoined:'✅ You joined the team!',toast_roomLeft:'You left the team (progress saved)',
+    toast_profileSaved:'💾 Profile saved',
+    toast_appUpdate:'🔄 New app version — updating...',
+    toast_goal:'🎯 Goal: {n}',toast_camMode:'📷 Camera',
+    toast_noHint:'No voice hint for this exercise',
+    toast_hiitStart:'⚡ HIIT: {n} rounds',toast_timerStart:'⏱️ Timer: {m} min',
+    toast_calibStart:'Stand straight for 2 sec...',toast_calibDone:'✅ Calibration done',
+    toast_voiceOn:'🔊 Voice on',toast_voiceOff:'🔇 Voice off',
+    toast_noSpeech:'❌ Browser does not support speech synthesis',
+    toast_voiceDisabled:'⚠️ Voice is off — enable the toggle above',
+    toast_noCloud:'⚠️ Cloud not set up, review not sent',
+    toast_feedbackSent:'✅ Feedback sent, thank you!',
+    toast_resetConfirm:'Reset ALL progress? (tap again to cancel)',
+    plankBadge_wrong:'❌ Wrong',speak_poseLost:'Pose lost',
+    speak_voiceTest:'Voice coach is working. Great workout!',
+    share_text:'🏆 FitPulse\nLevel {lvl} · {xp}/{nextXp} XP\n💪 Total reps: {reps}\n🔥 Calories: {cal}\n⚡ Best streak: {streak}\n\nTry it yourself 👉 {url}',
+    invite_text:'💪 Join me on FitPulse — an AI trainer that counts your reps and tracks your technique via camera!\n\n{link}',
   }
 };
-function t(key){return I18N[currentLang]?.[key]||I18N.ru[key]||key;}
+
+/** Get translated string. Supports {placeholders}. */
+function t(key,vars){
+  let s=I18N[currentLang]?.[key]??I18N.en[key]??key;
+  if(vars)Object.entries(vars).forEach(([k,v])=>{s=s.replaceAll('{'+k+'}',v);});
+  return s;
+}
 function applyLanguage(lang){
-  currentLang=I18N[lang]?lang:'ru';
+  currentLang=I18N[lang]?lang:'en';
+  // Update all data-i18n elements
   document.querySelectorAll('[data-i18n]').forEach(el=>{
     const key=el.dataset.i18n;
     const val=t(key);
-    if(el.tagName==='INPUT'||el.tagName==='TEXTAREA')el.placeholder=val;else el.textContent=val;
+    if(el.tagName==='INPUT'||el.tagName==='TEXTAREA')el.placeholder=val;
+    else el.textContent=val;
   });
-  document.documentElement.lang=currentLang;
-  localStorage.setItem('fp_lang',currentLang);
+  // Update lang-btn active state
   document.querySelectorAll('.lang-btn').forEach(b=>b.classList.toggle('active',b.dataset.lang===currentLang));
+  // Update document lang + TTS lang
+  document.documentElement.lang=currentLang==='ru'?'ru':'en';
+  // Update TTS language
+  // Persist
+  localStorage.setItem('fp_lang',currentLang);
+  // Re-render dynamic UI that contains translated strings
+  renderExercises();renderPrograms();updateQuestUI();updateChallengeUI();updateAchUI();updatePRList();updateLB();updateProfileUI();
 }
 
 // ============================================================
 //  EXERCISES
 // ============================================================
 const EX={
-  pushup:{name:'Отжимания',dn:95,up:150,ang:'elbow',cal:.5,xp:10,emoji:'💪',meta:'Грудь, трицепс'},
-  squat:{name:'Приседания',dn:115,up:160,ang:'knee',cal:.7,xp:12,emoji:'🦵',meta:'Квадрицепс, ягодицы'},
-  plank:{name:'Планка',dn:150,up:180,ang:'sha',isPlank:true,calS:.15,xpS:2,emoji:'⏱️',meta:'Кор, пресс'},
-  situp:{name:'Пресс',dn:55,up:85,ang:'trunk',cal:.4,xp:8,emoji:'🔺',meta:'Пресс'},
-  lunge:{name:'Выпады',dn:105,up:160,ang:'knee',cal:.6,xp:10,emoji:'🏃',meta:'Ноги, баланс'},
-  burpee:{name:'Бёрпи',dn:95,up:150,ang:'elbow',cal:1.0,xp:20,emoji:'🤸',meta:'Всё тело'},
-  pullup:{name:'Подтягивания',dn:130,up:50,ang:'elbow',cal:.8,xp:15,emoji:'🧗',meta:'Спина, бицепс'}
+  pushup:{id:'pushup',dn:95,up:150,ang:'elbow',cal:.5,xp:10,emoji:'💪'},
+  squat:{id:'squat',dn:115,up:160,ang:'knee',cal:.7,xp:12,emoji:'🦵'},
+  plank:{id:'plank',dn:150,up:180,ang:'sha',isPlank:true,calS:.15,xpS:2,emoji:'⏱️'},
+  situp:{id:'situp',dn:55,up:85,ang:'trunk',cal:.4,xp:8,emoji:'🔺'},
+  lunge:{id:'lunge',dn:105,up:160,ang:'knee',cal:.6,xp:10,emoji:'🏃'},
+  burpee:{id:'burpee',dn:95,up:150,ang:'elbow',cal:1.0,xp:20,emoji:'🤸'},
+  pullup:{id:'pullup',dn:130,up:50,ang:'elbow',cal:.8,xp:15,emoji:'🧗'}
 };
+// Helpers to get translated name/meta
+function exName(k){return t('ex_'+k);}
+function exMeta(k){return t('ex_meta_'+k);}
 
 // ============================================================
 //  PROGRAMS
 // ============================================================
 const PROGS=[
-  {id:'beginner',title:'Начинающий',emoji:'🌱',meta:'7 дней • базовый',steps:[
+  {id:'beginner',emoji:'🌱',steps:[
     {ex:'pushup',reps:5,sets:2},{ex:'squat',reps:10,sets:2},{ex:'plank',reps:20,sets:2},
     {ex:'pushup',reps:8,sets:3},{ex:'squat',reps:15,sets:3},{ex:'situp',reps:10,sets:2}]},
-  {id:'strength',title:'Сила',emoji:'💪',meta:'5 дней • интенсивный',steps:[
+  {id:'strength',emoji:'💪',steps:[
     {ex:'pushup',reps:15,sets:4},{ex:'pullup',reps:5,sets:3},{ex:'squat',reps:20,sets:4},{ex:'lunge',reps:12,sets:3}]},
-  {id:'cardio',title:'Кардио',emoji:'🏃',meta:'4 дня • сжигание',steps:[
+  {id:'cardio',emoji:'🏃',steps:[
     {ex:'burpee',reps:10,sets:3},{ex:'squat',reps:20,sets:3},{ex:'lunge',reps:15,sets:3}]},
-  {id:'core',title:'Кор & Пресс',emoji:'🔥',meta:'6 дней • пресс',steps:[
+  {id:'core',emoji:'🔥',steps:[
     {ex:'plank',reps:30,sets:3},{ex:'situp',reps:20,sets:4},{ex:'lunge',reps:15,sets:3}]}
 ];
+function progTitle(p){return t('prog_'+p.id);}
+function progMeta(p){return t('prog_'+p.id+'_meta');}
 
 // ============================================================
 //  SAVE / LOAD
@@ -126,9 +538,9 @@ function load(){
   achievements=d.achievements||{};prRecords=d.prRecords||{};
   xp=Math.round(d.xp||0);lvl=d.lvl||1;streak=d.streak||0;maxStreak=d.maxStreak||0;
   avatar=d.avatar||'🏆';avatarIsPhoto=d.avatarIsPhoto||false;
-  userName=d.userName||'Спортсмен';userWeight=d.userWeight||70;userHeight=d.userHeight||170;
+  userName=d.userName||'Athlete';userWeight=d.userWeight||70;userHeight=d.userHeight||170;
   prefSide=d.prefSide||'auto';sens=d.sens||1.0;goalReps=d.goalReps||10;
-  leaderboard=d.leaderboard||[{name:'Алекс',xp:450,lvl:5,avatar:'💪'},{name:'Мария',xp:320,lvl:4,avatar:'🏃'},{name:'Дима',xp:180,lvl:3,avatar:'🤸'}];
+  leaderboard=d.leaderboard||[{name:'Alex',xp:450,lvl:5,avatar:'💪'},{name:'Maria',xp:320,lvl:4,avatar:'🏃'},{name:'Dima',xp:180,lvl:3,avatar:'🤸'}];
   dayStreak=d.dayStreak||0;lastWorkoutDate=d.lastWorkoutDate||null;
   // Если пользователь пропустил день(и) и просто открыл приложение, не тренируясь —
   // показываем актуальный (уже сгоревший) streak сразу, а не ждём следующей тренировки,
@@ -162,11 +574,11 @@ function addXP(a){
   xp=Math.round(xp+a);let need=lvl*100,leveled=false;
   while(xp>=need){
     xp=Math.round(xp-need);lvl++;need=lvl*100;leveled=true;
-    speak(`Уровень ${lvl}!`,'!');bLvl();confetti(2500);toast(`🎉 Уровень ${lvl}!`);
+    speak(t('speak_levelUp',{n:lvl}),'!');bLvl();confetti(2500);toast(t('toast_levelUp',{n:lvl}));
     // На уровне 5 объясняем механику: чем выше уровень, тем меньше XP за одно и то же
     // упражнение в номинале — стимул чередовать упражнения, а не качать одно бесконечно.
     if(lvl===5){
-      setTimeout(()=>{speak('На высоких уровнях опыт за одно и то же упражнение становится меньше. Чередуйте упражнения для максимального прогресса','coach');toast('💡 Меняйте упражнения для максимального XP');},2500);
+      setTimeout(()=>{speak(t('speak_xpTip'),'coach');toast(t('toast_xpTip'));},2500);
     }
   }
   updateLvlUI();if(leveled){save();publishToCloud(true);}
@@ -176,7 +588,7 @@ function updateLvlUI(){
   q('xpFill').style.width=pct+'%';
   q('xpCur').textContent=xp;q('xpNext').textContent=need;
   q('psLevel').textContent=lvl;
-  q('profileTitle').textContent=`Уровень ${lvl} • ${lvlTitle()}`;
+  q('profileTitle').textContent=`${t('psLevelLabel')} ${lvl} • ${lvlTitle()}`;
   q('profileName').textContent=userName;
   q('psTotalReps').textContent=totalVolume;
   q('psTotalCal').textContent=Math.floor(caloriesBurned);
@@ -187,7 +599,7 @@ function updateLvlUI(){
     eff.textContent=pctEff>=100?'⚡ Базовый XP за упражнение: 100%':`⚡ Базовый XP за упражнение: ${pctEff}% — чередуйте упражнения для бонуса`;
   }
 }
-function lvlTitle(){const t=['Новичок','Атлет','Боец','Чемпион','Легенда'];return t[Math.min(Math.floor(lvl/2),t.length-1)];}
+function lvlTitle(){const keys=['lvl_0','lvl_1','lvl_2','lvl_3','lvl_4'];return t(keys[Math.min(Math.floor(lvl/2),keys.length-1)]);}
 function updateProfileUI(){updateLvlUI();}
 
 // ============================================================
@@ -198,7 +610,7 @@ function updStreak(inc){
   if(streak>maxStreak)maxStreak=streak;
   q('streakStat').textContent=streak;
   updSes();
-  if(streak%10===0&&streak>0){bAch();confetti(1500);speak(`Серия ${streak}!`);}
+  if(streak%10===0&&streak>0){bAch();confetti(1500);speak(t('speak_streak',{n:streak}));}
 }
 function addRepCal(){
   const e=EX[currentEx];if(!e||e.isPlank)return;
@@ -235,10 +647,10 @@ function updSes(){
 // ============================================================
 async function saveSet(silent=false){
   const avgAngle=sesAngleCount>0?Math.round(sesAngleSum/sesAngleCount):null;
-  const r={exercise:currentEx,exName:EX[currentEx]?.name||currentEx,reps:repCount,calories:Math.floor(caloriesBurned),date:new Date().toLocaleString(),volume:totalVolume,avgAngle};
+  const r={exercise:currentEx,exName:exName(currentEx)||currentEx,reps:repCount,calories:Math.floor(caloriesBurned),date:new Date().toLocaleString(),volume:totalVolume,avgAngle};
   try{await dbAddHistory(r);}catch(e){let h=JSON.parse(localStorage.getItem('fp_hist')||'[]');h.unshift(r);if(h.length>200)h.pop();localStorage.setItem('fp_hist',JSON.stringify(h));}
   sesAngleSum=0;sesAngleCount=0; // готовим буфер для следующей тренировки
-  if(!silent)toast('💾 Сохранено');
+  if(!silent)toast(t('toast_saved'));
 }
 async function showHistory(){
   let h=[];try{h=await dbGetHistory(80);}catch(e){h=JSON.parse(localStorage.getItem('fp_hist')||'[]');}
@@ -256,7 +668,7 @@ async function exportCSV(){
 async function clearHistory(){
   if(!confirm('Очистить всю историю?'))return;
   try{await dbClearHistory();}catch(e){localStorage.removeItem('fp_hist');}
-  q('historyCard').style.display='none';toast('🗑️ История очищена');
+  q('historyCard').style.display='none';toast(t('toast_histCleared'));
 }
 
 // ============================================================
@@ -301,7 +713,7 @@ async function drawChart(){
     label='reps';color1='rgba(168,85,247,.5)';color2='#c026d3';
   }
 
-  if(!vals.length){c.fillStyle='rgba(255,255,255,.25)';c.font='13px Inter';c.textAlign='center';c.fillText('Нет данных',W/2,H/2);return;}
+  if(!vals.length){c.fillStyle='rgba(255,255,255,.25)';c.font='13px Inter';c.textAlign='center';c.fillText(t('chartNoData'),W/2,H/2);return;}
   const max=chartMode==='technique'?100:Math.max(...vals,1);
   // gradient fill
   const grd=c.createLinearGradient(0,pad,0,H-pad);
@@ -341,33 +753,34 @@ function buildChartTabs(){
 //  ACHIEVEMENTS
 // ============================================================
 const ACH=[
-  {k:'first',n:'Первое повторение',e:'🎯',c:()=>repCount>=1},
-  {k:'ten',n:'10 за подход',e:'💪',c:()=>repCount>=10},
-  {k:'fifty',n:'50 всего',e:'🔥',c:()=>totalVolume>=50},
-  {k:'hundred',n:'100 всего',e:'💯',c:()=>totalVolume>=100},
-  {k:'fiveHundred',n:'500 всего',e:'🏆',c:()=>totalVolume>=500},
-  {k:'plankMaster',n:'Планка 60с',e:'⏱️',c:()=>plankTime>=60},
-  {k:'streak10',n:'Серия 10',e:'⚡',c:()=>streak>=10},
-  {k:'streak20',n:'Серия 20',e:'🌟',c:()=>streak>=20},
-  {k:'cal100',n:'100 калорий',e:'🔥',c:()=>caloriesBurned>=100},
-  {k:'lvl5',n:'Уровень 5',e:'⭐',c:()=>lvl>=5},
-  {k:'lvl10',n:'Уровень 10',e:'🌠',c:()=>lvl>=10},
-  {k:'variety',n:'5 упражнений',e:'🎭',c:()=>Object.keys(prRecords).length>=5},
+  {k:'first',e:'🎯',c:()=>repCount>=1},
+  {k:'ten',e:'💪',c:()=>repCount>=10},
+  {k:'fifty',e:'🔥',c:()=>totalVolume>=50},
+  {k:'hundred',e:'💯',c:()=>totalVolume>=100},
+  {k:'fiveHundred',e:'🏆',c:()=>totalVolume>=500},
+  {k:'plankMaster',e:'⏱️',c:()=>plankTime>=60},
+  {k:'streak10',e:'⚡',c:()=>streak>=10},
+  {k:'streak20',e:'🌟',c:()=>streak>=20},
+  {k:'cal100',e:'🔥',c:()=>caloriesBurned>=100},
+  {k:'lvl5',e:'⭐',c:()=>lvl>=5},
+  {k:'lvl10',e:'🌠',c:()=>lvl>=10},
+  {k:'variety',e:'🎭',c:()=>Object.keys(prRecords).length>=5},
 ];
+function achName(a){return t('ach_'+a.k);}
 function checkAch(){
   let nu=false;
-  ACH.forEach(a=>{if(!achievements[a.k]&&a.c()){achievements[a.k]=true;speak(`Ачивка: ${a.n}`);bAch();confetti(1500);toast(`🏅 ${a.n}`);nu=true;}});
+  ACH.forEach(a=>{if(!achievements[a.k]&&a.c()){achievements[a.k]=true;speak(t('speak_achiev',{n:achName(a)}));bAch();confetti(1500);toast(t('toast_achiev',{n:achName(a)}));nu=true;}});
   if(nu){updateAchUI();save();}
 }
 function updateAchUI(){
   const el=q('achGrid');if(!el)return;
-  el.innerHTML=ACH.map(a=>`<div class="ach-badge${achievements[a.k]?' unlocked':''}" title="${a.n}"><span>${a.e}</span><span class="${achievements[a.k]?'':'lock'}">${a.n}</span></div>`).join('');
+  el.innerHTML=ACH.map(a=>`<div class="ach-badge${achievements[a.k]?' unlocked':''}" title="${achName(a)}"><span>${a.e}</span><span class="${achievements[a.k]?'':'lock'}">${achName(a)}</span></div>`).join('');
 }
 function updatePRList(){
   const el=q('prList');if(!el)return;
   const keys=Object.keys(prRecords);
-  if(!keys.length){el.innerHTML='<p style="opacity:.5;font-size:.84rem">Нет рекордов</p>';return;}
-  el.innerHTML=keys.map(k=>`<div class="pr-row"><span>${EX[k]?.emoji||''} ${EX[k]?.name||k}</span><span class="pr-val">${prRecords[k]} повт.</span></div>`).join('');
+  if(!keys.length){el.innerHTML=`<p style="opacity:.5;font-size:.84rem">${t('noRecords')}</p>`;return;}
+  el.innerHTML=keys.map(k=>`<div class="pr-row"><span>${EX[k]?.emoji||''} ${exName(k)||k}</span><span class="pr-val">${prRecords[k]} ${t('sessReps')}</span></div>`).join('');
   q('prStat').textContent=Math.max(...Object.values(prRecords),0);
 }
 
@@ -395,20 +808,20 @@ function dateSeed(dateKey){
   return h;
 }
 const QUEST_POOL=[
-  {type:'pushup',tpl:n=>`Сделайте ${n} отжиманий`,reqRange:[15,35],xpPer:2.5},
-  {type:'squat',tpl:n=>`Сделайте ${n} приседаний`,reqRange:[20,45],xpPer:2.2},
-  {type:'situp',tpl:n=>`Сделайте ${n} раз на пресс`,reqRange:[15,30],xpPer:3},
-  {type:'lunge',tpl:n=>`Сделайте ${n} выпадов`,reqRange:[15,30],xpPer:3},
-  {type:'burpee',tpl:n=>`Сделайте ${n} бёрпи`,reqRange:[8,18],xpPer:5},
-  {type:'pullup',tpl:n=>`Сделайте ${n} подтягиваний`,reqRange:[5,12],xpPer:8},
-  {type:'plank',tpl:n=>`Продержите планку ${n} секунд (суммарно)`,reqRange:[40,90],xpPer:1.2,isPlank:true},
+  {type:'pushup',tpl:n=>t('quest_pushup',{n}),reqRange:[15,35],xpPer:2.5},
+  {type:'squat',tpl:n=>t('quest_squat',{n}),reqRange:[20,45],xpPer:2.2},
+  {type:'situp',tpl:n=>t('quest_situp',{n}),reqRange:[15,30],xpPer:3},
+  {type:'lunge',tpl:n=>t('quest_lunge',{n}),reqRange:[15,30],xpPer:3},
+  {type:'burpee',tpl:n=>t('quest_burpee',{n}),reqRange:[8,18],xpPer:5},
+  {type:'pullup',tpl:n=>t('quest_pullup',{n}),reqRange:[5,12],xpPer:8},
+  {type:'plank',tpl:n=>t('quest_plank',{n}),reqRange:[40,90],xpPer:1.2,isPlank:true},
 ];
 const CHALLENGE_POOL=[
-  {type:'pushup',tpl:(n,t)=>`${n} отжиманий за ${t} сек`,reqRange:[8,15],limitRange:[40,60]},
-  {type:'squat',tpl:(n,t)=>`${n} приседаний за ${t} сек`,reqRange:[10,20],limitRange:[40,60]},
-  {type:'burpee',tpl:(n,t)=>`${n} бёрпи за ${t} сек`,reqRange:[6,12],limitRange:[50,70]},
-  {type:'situp',tpl:(n,t)=>`${n} на пресс за ${t} сек`,reqRange:[10,18],limitRange:[40,55]},
-  {type:'lunge',tpl:(n,t)=>`${n} выпадов за ${t} сек`,reqRange:[8,16],limitRange:[40,60]},
+  {type:'pushup',tpl:(n,tm)=>t('chall_pushup',{n,t:tm}),reqRange:[8,15],limitRange:[40,60]},
+  {type:'squat',tpl:(n,tm)=>t('chall_squat',{n,t:tm}),reqRange:[10,20],limitRange:[40,60]},
+  {type:'burpee',tpl:(n,tm)=>t('chall_burpee',{n,t:tm}),reqRange:[6,12],limitRange:[50,70]},
+  {type:'situp',tpl:(n,tm)=>t('chall_situp',{n,t:tm}),reqRange:[10,18],limitRange:[40,55]},
+  {type:'lunge',tpl:(n,tm)=>t('chall_lunge',{n,t:tm}),reqRange:[8,16],limitRange:[40,60]},
 ];
 function pickRange(rng,[a,b]){return a+Math.floor(rng()*(b-a+1));}
 function generateDailyQuests(dateKey){
@@ -449,7 +862,7 @@ function checkQuest(){
     if(qst.done||qst.type!==currentEx)return;
     qst.cur+=1;
     if(qst.cur>=qst.req){
-      qst.done=true;addXP(qst.xp);toast(`✅ ${qst.desc}! +${qst.xp} XP`);speak('Задание выполнено!');bSuccess();confetti(2000);anyDone=true;
+      qst.done=true;addXP(qst.xp);toast(t('toast_questDone',{desc:qst.desc,xp:qst.xp}));speak(t('speak_questDone'));bSuccess();confetti(2000);anyDone=true;
     }
   });
   if(anyDone)save();
@@ -491,8 +904,8 @@ function startChallenge(){
     if(!dailyChallenge.active){clearInterval(iv);return;}
     t--;q('challengeTimer').textContent=fmt(t);
     if(t<=0){clearInterval(iv);dailyChallenge.active=false;dailyChallenge.timer=null;
-      if(dailyChallenge.cur>=dailyChallenge.req){dailyChallenge.done=true;addXP(dailyChallenge.xp);toast(`✅ Вызов! +${dailyChallenge.xp} XP`);bSuccess();confetti(2500);}
-      else toast('⏰ Время вышло, попробуйте завтра');save();}
+      if(dailyChallenge.cur>=dailyChallenge.req){dailyChallenge.done=true;addXP(dailyChallenge.xp);toast(t('toast_challDone',{xp:dailyChallenge.xp}));bSuccess();confetti(2500);}
+      else toast(t('toast_challTimeout'));save();}
   },1000);
   dailyChallenge.timer=iv;
 }
@@ -501,7 +914,7 @@ function checkChallenge(){
   dailyChallenge.cur++;
   if(dailyChallenge.cur>=dailyChallenge.req){
     dailyChallenge.active=false;dailyChallenge.done=true;if(dailyChallenge.timer)clearInterval(dailyChallenge.timer);dailyChallenge.timer=null;
-    addXP(dailyChallenge.xp);toast(`🏆 Вызов! +${dailyChallenge.xp} XP`);bAch();confetti(3000);save();
+    addXP(dailyChallenge.xp);toast(`🏆 Challenge! +${dailyChallenge.xp} XP`);bAch();confetti(3000);save();
   }
 }
 function updateChallengeUI(){
@@ -555,8 +968,8 @@ function addRep(){
   const mult=varietyMultiplier()*levelXpMultiplier();
   addXP(e.xp*mult);
   if(mult<1&&mult<=VARIETY_FLOOR+0.05&&sameExStreak%10===0){
-    speak('Попробуйте другое упражнение — опыт за повторы снижается','coach');
-    toast('📉 Опыт снижен — смените упражнение для полного XP');
+    speak(t('speak_xpDown'),'coach');
+    toast(t('toast_xpDown'));
   }
   addRepCal();updStreak(true);checkQuest();checkChallenge();bufferCommunityProgress(1);bufferTeamProgress(1);
   document.body.style.transition='background .18s';document.body.style.backgroundColor=repCount%2?'':'';
@@ -566,10 +979,10 @@ function addRep(){
     const diff=repCount-prevRecord;
     prRecords[currentEx]=repCount;
     if(prevRecord===0){
-      speak('Новый рекорд!','!');toast('🏆 Первый личный рекорд!');
+      speak(t('speak_firstRecord'),'!');toast(t('toast_firstRecord'));
     }else{
-      speak(`Новый рекорд! На ${diff} больше прошлого!`,'!');
-      toast(`🏆 Рекорд! ${repCount} — это на ${diff} больше прошлых ${prevRecord}`,3500);
+      speak(t('speak_newRecord',{diff}),'!');
+      toast(t('toast_newRecord',{reps:repCount,diff,prev:prevRecord}),3500);
     }
     bSuccess();confetti(2000);save();updatePRList();
   }
@@ -596,8 +1009,8 @@ function wellbeingCheck(lm,isDownPhase){
     if(stuckSinceTs===null)stuckSinceTs=now;
     else if(now-stuckSinceTs>8000&&now-lastStuckPromptTs>20000){
       lastStuckPromptTs=now;
-      speak('Всё хорошо? Если тяжело — можно сделать паузу','!');
-      toast('💛 Долго не двигаетесь — всё в порядке?',4000);
+      speak(t('speak_inactive'),'!');
+      toast(t('toast_inactive'),4000);
     }
   }else{
     stuckSinceTs=null;
@@ -609,7 +1022,7 @@ function wellbeingCheck(lm,isDownPhase){
     lowVisibilityStreak++;
     if(lowVisibilityStreak===15&&now-lastFallPromptTs>15000){ // ~15 кадров подряд почти ничего не видно
       lastFallPromptTs=now;
-      speak('Потерял вас из вида — всё хорошо? Остановите тренировку, если нужно','!');
+      speak(t('speak_poseLost'),'!');
       toast('⚠️ Camera lost track of you — are you okay?',4000);
     }
   }else{
@@ -632,21 +1045,21 @@ function addPlankT(dt){
     const prevRecord=prRecords[currentEx]||0;
     prRecords[currentEx]=curSec;
     if(prevRecord>0&&curSec-prevRecord>=3){ // не дёргаем toast на каждую секунду — только заметный прирост
-      toast(`🏆 Рекорд планки! ${curSec}с — на ${curSec-prevRecord}с больше прошлых ${prevRecord}с`,3000);
+      toast(t('toast_plankRecord',{cur:curSec,diff:curSec-prevRecord,prev:prevRecord}),3000);
     }
     save();updatePRList();
   }
 }
 function resetReps(){
   repCount=0;q('bigNum').textContent='0';isDown=false;plankTime=0;plankActive=false;goalAchieved=false;repExtremum=null;plankXpBuffer=0;plankLastRecordCheckSec=-1;
-  updStreak(false);updProgress();speak('Сброшено');
+  updStreak(false);updProgress();speak(t('speak_reset'));
 }
 function updProgress(){
   const e=EX[currentEx];if(!e)return;
   const cur=e.isPlank?plankTime:repCount;
   q('progBar').style.width=Math.min(100,(cur/goalReps)*100)+'%';
   q('progLabel').textContent=e.isPlank?`${Math.floor(plankTime)} / ${goalReps} сек`:`${repCount} / ${goalReps}`;
-  if(goalReps>0&&cur>=goalReps&&!goalAchieved&&cur>0){goalAchieved=true;speak('Цель достигнута!','!');bSuccess();confetti(2000);}
+  if(goalReps>0&&cur>=goalReps&&!goalAchieved&&cur>0){goalAchieved=true;speak(t('speak_goal'),'!');bSuccess();confetti(2000);}
 }
 
 // ============================================================
@@ -693,7 +1106,7 @@ function loadScriptWithTimeout(src,timeoutMs=12000){
 async function loadMP(){
   if(mpLoaded)return;
   if(typeof Pose!=='undefined'){mpLoaded=true;return;}
-  toast('Загрузка AI-модели...',4000);
+  toast(t('toast_aiLoading'),4000);
   const files=['camera_utils/camera_utils.js','drawing_utils/drawing_utils.js','pose/pose.js'];
   let lastErr=null;
   for(const base of MP_CDNS){
@@ -728,7 +1141,7 @@ function onResults(res){
     else if(e.ang==='sha')ang=a2d(lm[11],lm[23],lm[27]);
     else ok=false;
   }catch(ex){ok=false;}
-  if(!ok||isNaN(ang)){q('debugLine').textContent='Нет сигнала';return;}
+  if(!ok||isNaN(ang)){q('debugLine').textContent='No signal';return;}
   let fa=ang;if(calibAngles[currentEx])fa=ang+(180-calibAngles[currentEx]);
   fa=Math.min(180,Math.max(0,fa));
   const sa=smooth(fa);
@@ -742,7 +1155,7 @@ function onResults(res){
   if(e.isPlank){
     const correct=sa>=dT&&sa<=uT,now=Date.now();
     if(correct){if(!plankActive){plankActive=true;lastPlankTs=now;q('qualityBadge').textContent='✅ Правильно';}else{const dt=(now-lastPlankTs)/1000;if(dt>.05){lastPlankTs=now;addPlankT(dt);}}}
-    else if(plankActive&&(Date.now()-lastPlankTs)>500){plankActive=false;plankTime=0;q('bigNum').textContent='0';q('qualityBadge').textContent='❌ Неправильно';speak('Поза сбита');updStreak(false);updProgress();}
+    else if(plankActive&&(Date.now()-lastPlankTs)>500){plankActive=false;plankTime=0;q('bigNum').textContent='0';q('qualityBadge').textContent=t('plankBadge_wrong');speak(t('speak_poseLost'));updStreak(false);updProgress();}
     return;
   }
 
@@ -779,7 +1192,7 @@ function onResults(res){
   const qual=(!isDown&&nearTop)?'✅ Идеально':(isDown&&tooShallow)?'⚠️ Глубоко':'👍 Норма';
   q('qualityBadge').textContent=qual;
   runTechniqueCoach(lm,sa,dT,uT);
-  q('debugLine').textContent=`Угол: ${Math.round(sa)}° | Уверенность: ${Math.round((lm[11]?.visibility||0)*100)}%`;
+  q('debugLine').textContent=`Angle: ${Math.round(sa)}° | Confidence: ${Math.round((lm[11]?.visibility||0)*100)}%`;
 }
 
 // ============================================================
@@ -787,7 +1200,7 @@ function onResults(res){
 // ============================================================
 function countdown(cb){
   const ov=q('countdownOv'),ne=q('countdownNum');
-  const giveCameraHint=(alwaysHintCamera||!cameraHintGivenFor[currentEx])&&CAMERA_VOICE_HINTS[currentEx];
+  const giveCameraHint=(alwaysHintCamera||!cameraHintGivenFor[currentEx])&&getCamHint(currentEx);
   function runVisualCountdown(){
     if(!ov||!ne){cb();return;}
     ov.style.display='flex';let n=3;
@@ -798,9 +1211,9 @@ function countdown(cb){
     cameraHintGivenFor[currentEx]=true;
     if(ov)ov.style.display='flex';
     if(ne)ne.textContent='📷';
-    speak(CAMERA_VOICE_HINTS[currentEx],'!');
+    speak(getCamHint(currentEx),'!');
     // Даём фразе время прозвучать (примерно 0.45с на слово) перед визуальным 3-2-1
-    const words=CAMERA_VOICE_HINTS[currentEx].split(' ').length;
+    const words=(getCamHint(currentEx)||'').split(' ').length;
     setTimeout(runVisualCountdown,Math.min(7000,words*430));
   }else{
     runVisualCountdown();
@@ -824,7 +1237,7 @@ async function startCam(){
   try{
     await loadMP();
     stopActiveSource();
-    q('debugLine').textContent='Инициализация...';
+    q('debugLine').textContent='Initializing...';
     const myGen=++sessionGen; // эпоха текущего запуска — отсекает кадры от прошлых сессий
     ensurePose();
     pose.onResults(res=>{if(myGen===sessionGen)onResults(res);});
@@ -833,11 +1246,11 @@ async function startCam(){
     await cam.start();
     const setSz=()=>{if(vid.videoWidth){const cv=q('canvas');cv.width=vid.videoWidth;cv.height=vid.videoHeight;}else requestAnimationFrame(setSz);};setSz();
     isRunning=true;isPaused=false;setCtrl(true);startSes();startChallenge();hintFor(currentEx);
-    q('debugLine').textContent='Камера активна';toast('📷 Камера готова');speak('Камера готова');
-  }catch(e){toast('⚠️ '+e.message,5000);q('debugLine').textContent='Ошибка: '+e.message;}
+    q('debugLine').textContent=t('debugCamActive');toast(t('toast_camReady'));speak(t('speak_camReady'));
+  }catch(e){toast('⚠️ '+e.message,5000);q('debugLine').textContent=t('debugError')+e.message;}
 }
 async function startVid(){
-  const vu=q('vidUp');if(!vu.src){toast('Выберите видео — нажмите «📁 Загрузить»',3500);return;}
+  const vu=q('vidUp');if(!vu.src){toast(t('toast_noVideo'),3500);return;}
   try{
     await loadMP();
     stopActiveSource();
@@ -848,7 +1261,7 @@ async function startVid(){
     // Без этого play() может тихо упасть, если пользователь нажал «Старт» сразу после
     // выбора файла, пока браузер ещё декодирует видео.
     if(vu.readyState<2){
-      toast('⏳ Подготовка видео...');
+      toast(t('toast_videoPrep'));
       await new Promise((res,rej)=>{
         const onReady=()=>{vu.removeEventListener('loadeddata',onReady);vu.removeEventListener('error',onErr);res();};
         const onErr=()=>{vu.removeEventListener('loadeddata',onReady);vu.removeEventListener('error',onErr);rej(new Error('Не удалось прочитать видеофайл'));};
@@ -868,8 +1281,8 @@ async function startVid(){
     isRunning=true;isPaused=false;setCtrl(true);startSes();
     const p=()=>{if(myGen!==sessionGen)return;if(isRunning&&!isPaused&&!vu.paused&&pose&&vu.readyState>=2)pose.send({image:vu}).catch(()=>{});frameId=requestAnimationFrame(p);};p();
     const setSz=()=>{if(vu.videoWidth){const cv=q('canvas');cv.width=vu.videoWidth;cv.height=vu.videoHeight;}else requestAnimationFrame(setSz);};setSz();
-    toast('🎥 Анализ видео');hintFor(currentEx);
-  }catch(e){toast('⚠️ '+e.message,5000);q('debugLine').textContent='Ошибка: '+e.message;}
+    toast(t('toast_videoAnalyse'));hintFor(currentEx);
+  }catch(e){toast('⚠️ '+e.message,5000);q('debugLine').textContent=t('debugError')+e.message;}
 }
 // ============================================================
 //  DAY STREAK — дней подряд с тренировкой (по локальной дате устройства)
@@ -898,11 +1311,11 @@ function checkOvertraining(){
   counts.n+=1;
   localStorage.setItem('fp_sessions_today',JSON.stringify(counts));
   if(counts.n===4){
-    speak('Уже 4 подхода сегодня — не забывайте про отдых, мышцам тоже нужно восстановление','coach');
-    toast('💛 4 тренировки за день — отличная активность, но не забывайте отдыхать',4000);
+    speak(t('speak_badPosture_4'),'coach');
+    toast(t('toast_badPosture_4'),4000);
   }else if(counts.n===6){
-    speak('6 тренировок за один день — это много. Перетренированность замедляет прогресс, а не ускоряет его','!');
-    toast('⚠️ Возможно, на сегодня уже достаточно — дайте телу восстановиться',5000);
+    speak(t('speak_overTrain'),'!');
+    toast(t('toast_overTrain'),5000);
   }
 }
 
@@ -919,7 +1332,7 @@ function updateDayStreak(){
   }
   lastWorkoutDate=today;
   if(dayStreak===3||dayStreak===7||dayStreak===14||dayStreak===30){
-    speak(`${dayStreak} дней подряд! Невероятная дисциплина!`,'!');bAch();confetti(2500);toast(`🔥 Серия ${dayStreak} дней!`);
+    speak(t('speak_dayStreak',{n:dayStreak}),'!');bAch();confetti(2500);toast(t('toast_dayStreak',{n:dayStreak}));
   }
   updateDayStreakUI();
   save();
@@ -947,14 +1360,14 @@ function stopAll(){
   stuckSinceTs=null;lowVisibilityStreak=0;
   setCtrl(false);
   const didWork=repCount>0||plankTime>0;
-  if(didWork){saveSet(true);updateDayStreak();checkOvertraining();maybeRewardReferrer();flushCommunityProgress();flushTeamProgress();toast('✅ Тренировка сохранена');publishToCloud(true);}else toast('Стоп');
+  if(didWork){saveSet(true);updateDayStreak();checkOvertraining();maybeRewardReferrer();flushCommunityProgress();flushTeamProgress();toast(t('toast_workoutSaved'));publishToCloud(true);}else toast(t('toast_stop'));
   stopHiit();
 }
 function pauseAll(){
   if(!isRunning)return;isPaused=!isPaused;
   q('pauseBtn').textContent=isPaused?'▶️ Продолжить':'⏸️ Пауза';
   if(currentMode==='video')isPaused?q('vidUp').pause():q('vidUp').play();
-  speak(isPaused?'Пауза':'Продолжаем');
+  speak(t(isPaused?'speak_pause':'speak_resume'));
 }
 function setCtrl(on){
   q('resetBtn').disabled=!on;q('pauseBtn').disabled=!on;q('stopBtn').disabled=!on;
@@ -974,8 +1387,8 @@ function startHiit(work,rest,rounds){
   hiitInt=setInterval(()=>{
     hiitLeft--;updHiit();
     if(hiitLeft<=0){
-      if(hiitPhase==='work'){hiitPhase='rest';hiitLeft=hiitRest;speak('Отдых!');beep(400,.3);}
-      else{hiitRound++;if(hiitRound>=hiitTotal){stopHiit();speak('HIIT завершён!');bSuccess();confetti(3000);toast('🏆 HIIT завершён!');return;}hiitPhase='work';hiitLeft=hiitWork;speak('Работаем!');beep(800,.2);}
+      if(hiitPhase==='work'){hiitPhase='rest';hiitLeft=hiitRest;speak(t('speak_hiitRest'));beep(400,.3);}
+      else{hiitRound++;if(hiitRound>=hiitTotal){stopHiit();speak(t('speak_hiitDone'));bSuccess();confetti(3000);toast(t('toast_hiitDone'));return;}hiitPhase='work';hiitLeft=hiitWork;speak(t('speak_hiitWork'));beep(800,.2);}
       buildHiitDots();updHiit();
     }
   },1000);
@@ -992,16 +1405,16 @@ function buildHiitDots(){q('hiitDots').innerHTML=Array.from({length:hiitTotal},(
 // ============================================================
 function buildProgsGrid(){
   const el=q('progsGrid');if(!el)return;
-  el.innerHTML=PROGS.map(p=>`<div class="prog-card" data-pid="${p.id}"><div class="prog-emoji">${p.emoji}</div><div class="prog-title">${p.title}</div><div class="prog-meta">${p.meta}</div></div>`).join('');
+  el.innerHTML=PROGS.map(p=>`<div class="prog-card" data-pid="${p.id}"><div class="prog-emoji">${p.emoji}</div><div class="prog-title">${progTitle(p)}</div><div class="prog-meta">${progMeta(p)}</div></div>`).join('');
   el.querySelectorAll('.prog-card').forEach(c=>c.onclick=()=>selectProg(c.dataset.pid));
 }
 function selectProg(id){
   activeProg=PROGS.find(p=>p.id===id);progIdx=0;if(!activeProg)return;
-  q('progStepsCard').style.display='block';q('progStepsTitle').textContent=`${activeProg.emoji} ${activeProg.title}`;
+  q('progStepsCard').style.display='block';q('progStepsTitle').textContent=`${activeProg.emoji} ${progTitle(activeProg)}`;
   renderSteps();q('progsGrid').querySelectorAll('.prog-card').forEach(c=>c.classList.toggle('sel',c.dataset.pid===id));
 }
 function renderSteps(){
-  q('progStepsList').innerHTML=activeProg.steps.map((s,i)=>`<div class="step-row${i===progIdx?' cur':i<progIdx?' done':''}"><span>${EX[s.ex].emoji}</span><span>${EX[s.ex].name} — ${s.reps} × ${s.sets} подх.</span></div>`).join('');
+  q('progStepsList').innerHTML=activeProg.steps.map((s,i)=>`<div class="step-row${i===progIdx?' cur':i<progIdx?' done':''}"><span>${EX[s.ex].emoji}</span><span>${exName(s.ex)} — ${s.reps} × ${s.sets}</span></div>`).join('');
 }
 function startProgStep(){
   if(!activeProg)return;
@@ -1009,9 +1422,9 @@ function startProgStep(){
   setEx(s.ex);goalReps=s.reps;q('goalInput').value=goalReps;updProgress();
   openTab('train');
   countdown(()=>currentMode==='camera'?startCam():startVid());
-  toast(`${EX[s.ex].emoji} Шаг ${progIdx+1}/${activeProg.steps.length}`);
+  toast(`${EX[s.ex].emoji} ${t('toast_progStep',{step:progIdx+1,total:activeProg.steps.length})}`);
 }
-function nextProgStep(){if(!activeProg)return;progIdx++;if(progIdx>=activeProg.steps.length){toast('🏆 Программа завершена!');confetti(3000);activeProg=null;q('progStepsCard').style.display='none';return;}renderSteps();}
+function nextProgStep(){if(!activeProg)return;progIdx++;if(progIdx>=activeProg.steps.length){toast(t('toast_progDone'));confetti(3000);activeProg=null;q('progStepsCard').style.display='none';return;}renderSteps();}
 
 // ============================================================
 //  WORKOUT TIMER
@@ -1020,7 +1433,7 @@ function startWorkoutTimer(min){
   if(workoutTimerInt)clearInterval(workoutTimerInt);
   let s=min*60;
   const d=q('timerDisplay');
-  const tick=()=>{const m=Math.floor(s/60),sc=s%60;if(d)d.textContent=`${String(m).padStart(2,'0')}:${String(sc).padStart(2,'0')}`;if(s<=10&&s>0)beep(400,.06);if(s<=0){clearInterval(workoutTimerInt);if(Notification.permission==='granted')new Notification('FitPulse',{body:'Тренировка окончена!'});speak('Время вышло!');bSuccess();if(d)d.textContent='⏰ Готово!';return;}s--;};
+  const tick=()=>{const m=Math.floor(s/60),sc=s%60;if(d)d.textContent=`${String(m).padStart(2,'0')}:${String(sc).padStart(2,'0')}`;if(s<=10&&s>0)beep(400,.06);if(s<=0){clearInterval(workoutTimerInt);if(Notification.permission==='granted')new Notification('FitPulse',{body:t('notif_timerDone')});speak(t('speak_timerDone'));bSuccess();if(d)d.textContent=t('toast_timerDone');return;}s--;};
   tick();workoutTimerInt=setInterval(tick,1000);
 }
 
@@ -1047,7 +1460,7 @@ function buildEmojiGrid(){
 }
 function handleAvatarFile(file){
   const reader=new FileReader();
-  reader.onload=e=>{avatar=e.target.result;avatarIsPhoto=true;renderAvatar();save();closeModal('avatarModal');toast('Аватар обновлён!');};
+  reader.onload=e=>{avatar=e.target.result;avatarIsPhoto=true;renderAvatar();save();closeModal('avatarModal');toast(t('toast_avatarSaved'));};
   reader.readAsDataURL(file);
 }
 
@@ -1089,7 +1502,7 @@ async function updateLB(){
   const rowHtml=(p,rankLabel)=>`<div class="lb-item${p.me?' me':''}">
     <div class="lb-rank">${rankLabel}</div>
     <div class="lb-av">${p.avatarIsPhoto?`<img src="${p.avatar}" alt="">`:p.avatar||'🏆'}</div>
-    <div class="lb-name">${p.name}${p.me&&!p.name.includes('вы')?' (Вы)':''}</div>
+    <div class="lb-name">${p.name}${p.me?' ('+t('tabProfile').replace(/[👤]/g,'').trim()+')':''}</div>
     <div class="lb-score">Lvl ${p.lvl} · ${p.xp} XP</div>
   </div>`;
 
@@ -1106,8 +1519,8 @@ async function updateLB(){
 
 async function publishToCloud(silent=true){
   if(!CLOUD_ENABLED)return;
-  const ok=await cloudPublishScore({name:userName,avatar,avatarIsPhoto,xp,lvl,maxStreak},e=>{if(!silent)toast('❌ Ошибка публикации: '+e.message,4000);});
-  if(ok&&!silent)toast('🌍 Результат опубликован в рейтинге');
+  const ok=await cloudPublishScore({name:userName,avatar,avatarIsPhoto,xp,lvl,maxStreak},e=>{if(!silent)toast(t('toast_publishError')+e.message,4000);});
+  if(ok&&!silent)toast(t('toast_published'));
 }
 
 // ============================================================
@@ -1134,21 +1547,21 @@ function setTheme(t){document.body.className=`theme-${t}`;localStorage.setItem('
 // ============================================================
 //  HINTS / TIPS
 // ============================================================
-const HINTS={pushup:'💡 Упор лёжа, камера сбоку. Локти сгибайте до 90°.',squat:'💡 Боком к камере, ноги шире плеч. Колени до 90°, спина прямая.',plank:'💡 На предплечьях, тело прямое. Камера сбоку.',situp:'💡 Лёжа, колени согнуты. Корпус до 45°.',lunge:'💡 Боком, шаг вперёд, колено 90°.',burpee:'💡 Присед → упор → отжимание → прыжок.',pullup:'💡 Перекладина, камера сбоку (не сзади) — так AI точнее видит сгибание локтя.'};
+const HINTS={pushup:'💡 Plank position, camera to the side. Bend elbows to 90°.',squat:'💡 Side on to camera, feet shoulder-width. Knees to 90°, back straight.',plank:'💡 On forearms, body straight. Camera to the side.',situp:'💡 Lying down, knees bent. Lift torso to 45°.',lunge:'💡 Side on, step forward, knee at 90°.',burpee:'💡 Squat → plank → push-up → jump.',pullup:'💡 Pull-up bar, camera to the side (not behind) — AI tracks elbow bend more accurately.'};
 
 // Голосовые инструкции по установке камеры — проигрываются один раз перед стартом обратного отсчёта
 const CAMERA_VOICE_HINTS={
-  pushup:'Поставьте телефон на пол сбоку от себя, на уровне груди, чтобы видно было всё тело в профиль',
-  squat:'Поставьте телефон на пол перед собой, на расстоянии двух метров, чтобы в кадре были ноги и корпус целиком',
-  plank:'Поставьте телефон сбоку на уровне пола, чтобы камера видела вас в профиль с головы до пят',
-  situp:'Поставьте телефон сбоку на уровне пола, чтобы видеть корпус и ноги в профиль',
-  lunge:'Поставьте телефон сбоку, на расстоянии двух метров, чтобы видеть ноги в профиль во время выпада',
-  burpee:'Поставьте телефон сбоку на расстоянии двух-трёх метров, чтобы видеть всё тело при движении вниз и вверх',
-  pullup:'Поставьте телефон сбоку от турника, не сзади — так искусственный интеллект точнее видит сгибание локтя и считает повторения'
+  pushup:'Place your phone on the floor to your side at chest height so your whole body is visible in profile',
+  squat:'Place your phone on the floor about two metres in front of you so your legs and torso are fully in frame',
+  plank:'Place your phone to your side at floor level so the camera sees you in profile from head to toe',
+  situp:'Place your phone to your side at floor level to see your torso and legs in profile',
+  lunge:'Place your phone to your side about two metres away so your legs are visible in profile during the lunge',
+  burpee:'Place your phone two to three metres to your side so your whole body is visible moving up and down',
+  pullup:'Place your phone to the side of the pull-up bar, not behind — the AI tracks elbow bend more accurately this way'
 };
-let cameraHintGivenFor={}; // чтобы не повторять подсказку при каждом старте подряд, только при смене упражнения
-let alwaysHintCamera=false; // если включено в настройках — проговаривать инструкцию по камере перед каждым стартом
-function hintFor(k){const el=q('poseHint');if(el)el.textContent=HINTS[k]||'Встаньте так, чтобы тело полностью было в кадре.';}
+let cameraHintGivenFor={};
+let alwaysHintCamera=false;
+function hintFor(k){const el=q('poseHint');if(el)el.textContent=getHint(k);}
 function tipShow(txt,type=''){
   const w=q('tipsWrap');if(!w)return;
   const d=document.createElement('div');d.className=`tip-pop ${type}`;d.textContent=txt;
@@ -1161,19 +1574,19 @@ function tipShow(txt,type=''){
 // ============================================================
 function startVoice(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){toast('Голос не поддерживается');return;}
-  const r=new SR();r.lang='ru-RU';
+  if(!SR){toast(t('toast_noVoice'));return;}
+  const r=new SR();r.lang=currentLang==='ru'?'ru-RU':'en-US';
   r.onresult=e=>{
     const cmd=e.results[0][0].transcript.toLowerCase();toast(`🎙️ "${cmd}"`);
     if(cmd.includes('сброс'))resetReps();
     else if(cmd.includes('пауза'))pauseAll();
     else if(cmd.includes('стоп'))stopAll();
     else if(cmd.includes('старт'))countdown(()=>currentMode==='camera'?startCam():startVid());
-    else if(cmd.includes('сколько'))speak(`${repCount} повторений`);
-    else if(cmd.includes('калори'))speak(`${Math.floor(caloriesBurned)} калорий`);
-    else speak('Не понял');
+    else if(cmd.includes('how many')||cmd.includes('count')||cmd.includes('сколько'))speak(`${repCount} ${t('sessReps').replace(/[🔢]/g,'').trim()}`);
+    else if(cmd.includes('calori')||cmd.includes('калор'))speak(`${Math.floor(caloriesBurned)} ${t('sessCal').toLowerCase()}`);
+    else speak(t('speak_notUnderstood'));
   };
-  r.onerror=()=>toast('Ошибка голоса');r.start();toast('🎙️ Слушаю...');
+  r.onerror=()=>toast(t('toast_voiceError'));r.start();toast(t('toast_listening'));
 }
 
 // ============================================================
@@ -1195,7 +1608,7 @@ function captureReferralOnLoad(){
   const ref=getReferrerFromURL();
   if(ref&&ref!==getDeviceId()&&!localStorage.getItem('fp_referred_by')&&!localStorage.getItem('fp_referral_done')){
     localStorage.setItem('fp_referred_by',ref);
-    toast('🎁 Вы пришли по приглашению — бонус другу придёт после вашей первой тренировки!',4500);
+    toast(t('toast_inviteBonus'),4500);
   }
   if(ref){
     const url=new URL(location.href);url.searchParams.delete('ref');
@@ -1213,9 +1626,9 @@ async function maybeRewardReferrer(){
 }
 function shareReferral(){
   const link=myReferralLink();
-  const txt=`💪 Присоединяйся ко мне в FitPulse — AI-тренер, который считает повторения и следит за техникой через камеру!\n\n${link}`;
+  const txt=t('invite_text',{link});
   if(navigator.share)navigator.share({title:'FitPulse',text:txt,url:link});
-  else{navigator.clipboard?.writeText(txt);toast('🔗 Ссылка скопирована!');}
+  else{navigator.clipboard?.writeText(txt);toast(t('toast_linkCopied'));}
 }
 
 // ============================================================
@@ -1301,33 +1714,33 @@ async function createTeamRoom(){
   const nameInput=q('newRoomName');
   const roomName=nameInput?.value.trim()||'Моя команда';
   const code=await cloudCreateRoom(roomName,userName);
-  if(!code){toast('❌ Не получилось создать комнату');return;}
+  if(!code){toast(t('toast_roomFail'));return;}
   myRoomCode=code;localStorage.setItem('fp_room_code',code);
-  toast(`✅ Комната создана! Код: ${code}`,4000);
+  toast(t('toast_roomCreated',{code}),4000);
   if(nameInput)nameInput.value='';
   refreshTeamRoomUI();
 }
 async function joinTeamRoom(){
   const codeInput=q('joinRoomCode');
   const code=codeInput?.value.trim().toUpperCase();
-  if(!code||code.length<4){toast('Введите код комнаты');return;}
+  if(!code||code.length<4){toast(t('toast_roomCodeEmpty'));return;}
   const ok=await cloudJoinRoom(code,userName);
-  if(!ok){toast('❌ Комната не найдена — проверьте код');return;}
+  if(!ok){toast(t('toast_roomNotFound'));return;}
   myRoomCode=code;localStorage.setItem('fp_room_code',code);
-  toast('✅ Вы присоединились к команде!');
+  toast(t('toast_roomJoined'));
   if(codeInput)codeInput.value='';
   refreshTeamRoomUI();
 }
 function leaveTeamRoom(){
   myRoomCode=null;localStorage.removeItem('fp_room_code');
-  toast('Вы покинули команду (прогресс в комнате сохранён)');
+  toast(t('toast_roomLeft'));
   refreshTeamRoomUI();
 }
 function shareRoomCode(){
   if(!myRoomCode)return;
   const txt=`💪 Присоединяйся к моей команде в FitPulse! Код комнаты: ${myRoomCode}\n${APP_URL}`;
   if(navigator.share)navigator.share({title:'FitPulse — командный челлендж',text:txt});
-  else{navigator.clipboard?.writeText(txt);toast('🔗 Код скопирован!');}
+  else{navigator.clipboard?.writeText(txt);toast(t('toast_codeCopied'));}
 }
 
 // ============================================================
@@ -1335,12 +1748,12 @@ function shareRoomCode(){
 // ============================================================
 function updateSharePreview(){
   const el=q('sharePreview');if(!el)return;
-  el.textContent=`🏆 FitPulse\nУровень ${lvl} · ${xp}/${lvl*100} XP\n💪 Всего повторений: ${totalVolume}\n🔥 Калорий: ${Math.floor(caloriesBurned)}\n⚡ Макс. серия: ${maxStreak}\n\nЗаходи, попробуй сам 👉 ${APP_URL}`;
+  el.textContent=t('share_text',{lvl,xp,nextXp:lvl*100,reps:totalVolume,cal:Math.floor(caloriesBurned),streak:maxStreak,url:APP_URL});
 }
 function shareResult(){
   const txt=q('sharePreview')?.textContent||'FitPulse';
   if(navigator.share)navigator.share({title:'FitPulse',text:txt,url:APP_URL});
-  else{navigator.clipboard?.writeText(txt);toast('Скопировано!');}
+  else{navigator.clipboard?.writeText(txt);toast(t('toast_copied'));}
 }
 
 // ============================================================
@@ -1354,7 +1767,7 @@ const DEMO_CAPTIONS={
 const PRIMARY_EX=['pushup','squat']; // всегда видны сразу на главном экране
 function buildExGrid(){
   const el=q('exercisesGrid');if(!el)return;
-  el.innerHTML=PRIMARY_EX.map(k=>{const v=EX[k];return `<div class="ex-card${k===currentEx?' active':''}" data-ex="${k}"><div class="ex-emoji">${v.emoji}</div><div class="ex-name">${v.name}</div><div class="ex-meta">${v.meta}</div></div>`;}).join('');
+  el.innerHTML=PRIMARY_EX.map(k=>{const v=EX[k];return `<div class="ex-card${k===currentEx?' active':''}" data-ex="${k}"><div class="ex-emoji">${v.emoji}</div><div class="ex-name">${exName(k)}</div><div class="ex-meta">${exMeta(k)}</div></div>`;}).join('');
   el.querySelectorAll('.ex-card').forEach(c=>c.onclick=()=>setEx(c.dataset.ex));
   const moreKeys=Object.keys(EX).filter(k=>!PRIMARY_EX.includes(k));
   const cnt=q('moreExCount');if(cnt)cnt.textContent=moreKeys.length;
@@ -1362,12 +1775,12 @@ function buildExGrid(){
 function buildMoreExGrid(){
   const el=q('moreExGrid');if(!el)return;
   const moreKeys=Object.keys(EX).filter(k=>!PRIMARY_EX.includes(k));
-  el.innerHTML=moreKeys.map(k=>{const v=EX[k];return `<div class="ex-card${k===currentEx?' active':''}" data-ex="${k}"><div class="ex-emoji">${v.emoji}</div><div class="ex-name">${v.name}</div><div class="ex-meta">${v.meta}</div></div>`;}).join('');
+  el.innerHTML=moreKeys.map(k=>{const v=EX[k];return `<div class="ex-card${k===currentEx?' active':''}" data-ex="${k}"><div class="ex-emoji">${v.emoji}</div><div class="ex-name">${exName(k)}</div><div class="ex-meta">${exMeta(k)}</div></div>`;}).join('');
   el.querySelectorAll('.ex-card').forEach(c=>c.onclick=()=>{setEx(c.dataset.ex);closeModal('moreExModal');});
 }
 function setEx(k){
   currentEx=k;const e=EX[k];if(!e)return;
-  q('exLabel').textContent=e.name;resetReps();toast(`${e.emoji} ${e.name}`);
+  q('exLabel').textContent=exName(k);resetReps();toast(`${e.emoji} ${exName(k)}`);
   // Подсвечиваем активную карточку и в основной плитке, и в модалке "Ещё упражнения" —
   // обе используют один класс .ex-card, так что один querySelectorAll покрывает обе.
   document.querySelectorAll('.ex-card').forEach(c=>c.classList.toggle('active',c.dataset.ex===k));
@@ -1375,7 +1788,7 @@ function setEx(k){
   // чтобы было видно, что выбор не потерялся, даже когда модалка закрыта.
   const moreBtn=q('moreExBtn');
   if(moreBtn){
-    if(!PRIMARY_EX.includes(k))moreBtn.innerHTML=`${e.emoji} ${e.name} <span class="more-ex-edit">изменить</span>`;
+    if(!PRIMARY_EX.includes(k))moreBtn.innerHTML=`${e.emoji} ${exName(k)} <span class="more-ex-edit">✎</span>`;
     else{const moreKeys=Object.keys(EX).filter(x=>!PRIMARY_EX.includes(x));moreBtn.innerHTML=`📋 Ещё <span id="moreExCount">${moreKeys.length}</span> упражнений`;}
   }
   hintFor(k);showDemo(k);coachCooldowns={};
@@ -1399,7 +1812,7 @@ function showDemo(k){
   if(!ov||!wrap)return;
   const gif=DEMO_GIFS[k];
   if(!gif){ov.style.display='none';return;} // гифки для этого упражнения пока нет — молча скрываем демо
-  wrap.innerHTML=`<img src="${gif}" alt="${EX[k]?.name||k}" style="width:100%;height:100%;object-fit:contain;">`;
+  wrap.innerHTML=`<img src="${gif}" alt="${exName(k)||k}" style="width:100%;height:100%;object-fit:contain;">`;
   if(cap)cap.textContent=DEMO_CAPTIONS[k]||'Техника выполнения';
   ov.style.display='flex';
   clearTimeout(showDemo._timer);
@@ -1478,7 +1891,7 @@ function pumpSpeakQueue(){
   speakBusy=true;
   const {txt,urgency}=speakQueue.shift();
   const u=new SpeechSynthesisUtterance(txt);
-  u.lang='ru-RU';u.volume=voiceVolume;
+  u.lang=currentLang==='ru'?'ru-RU':'en-US';u.volume=voiceVolume;
   u.rate=urgency==='coach'?Math.max(.8,voiceRate-.1):voiceRate;
   u.pitch=voicePitch;
   let settled=false;
@@ -1545,26 +1958,35 @@ function toggleQuest(id){document.getElementById(id)?.classList.toggle('collapse
 // ============================================================
 //  CHANGELOG — «Что нового» после обновлений
 // ============================================================
-// Чтобы анонсировать новую версию: подними CURRENT_VERSION на 1 и добавь
-// запись в начало CHANGELOG (новые сверху). Модалка покажется автоматически
-// один раз тем, у кого в localStorage записана более старая версия —
-// включая существующих пользователей, которые ещё не видели апдейт.
-const CURRENT_VERSION=2;
+// To announce a new version: bump CURRENT_VERSION by 1 and add
+// an entry at the top of CHANGELOG (newest first). The modal will appear
+// automatically once for users whose localStorage has an older version —
+// including existing users who haven't seen the update yet.
+const CURRENT_VERSION=3;
 const CHANGELOG=[
-  {v:2,date:'Июнь 2026',items:[
-    'Серия дней подряд с тренировкой 🔥',
-    'Каждый день — новые случайные задания и вызов дня',
-    'Реферальная система: приглашайте друзей за бонус XP',
-    'Общий челлендж недели — тренируемся вместе со всем комьюнити',
-    'Выбор уровня подготовки при первом запуске',
+  {v:3,date:'June 2026',items:[
+    '👥 Team challenges with friends — create a room, share a code, compete together',
+    '📐 Technique angle chart — track joint angle quality over time on the Progress tab',
+    '⚠️ Overtraining warning — the app detects excessive daily volume and alerts you to rest',
+    '🦺 Balance & pain warning — real-time alerts if risky posture or loss of balance is detected',
+    '🌐 Full English interface — the entire app is now in English',
+    '🏆 Record comparison in toast — when you beat a personal best, a popup shows old vs new record',
+    '✨ "What\'s New" button in Menu — view this changelog any time, not just on first launch',
   ]},
-  {v:1,date:'Июнь 2026',items:[
-    'Запуск FitPulse: AI-анализ техники через камеру в реальном времени',
-    'Голосовой коуч с подсказками по технике для 7 упражнений',
-    'Система уровней и опыта, личные рекорды, достижения',
-    'Онлайн-рейтинг — соревнуйтесь с другими пользователями',
-    'Программы тренировок и HIIT-таймер',
-    'Раздел обратной связи — делитесь идеями и отзывами',
+  {v:2,date:'June 2026',items:[
+    '🔥 Day streak — consecutive training days tracked',
+    '🎯 Daily quests and daily challenge refresh every day',
+    '🎁 Referral system — invite friends and earn bonus XP',
+    '🌍 Weekly community challenge — train together with everyone',
+    '🌱 Fitness level selection on first launch',
+  ]},
+  {v:1,date:'June 2026',items:[
+    '🚀 FitPulse launch: real-time AI technique analysis via camera',
+    '🎙️ Voice coach with form cues for 7 exercises',
+    '⚡ Level & XP system, personal records, achievements',
+    '🏆 Online leaderboard — compete with other users',
+    '📋 Workout programs and HIIT timer',
+    '💬 Feedback section — share ideas and reviews',
   ]},
 ];
 // Применяет дефолтные настройки в зависимости от заявленного уровня подготовки.
@@ -1587,14 +2009,21 @@ function applyFitnessLevelDefaults(level){
   localStorage.setItem('fp_fitness_level',level);
   save();
 }
-function checkChangelog(){
-  const seen=parseInt(localStorage.getItem('fp_changelog_seen')||'0');
-  if(seen>=CURRENT_VERSION)return;
+function renderChangelog(){
   const body=q('changelogBody');
   if(body){
     body.innerHTML=CHANGELOG.map(c=>`<div class="changelog-item"><div class="changelog-version">v${c.v} · ${c.date}</div><ul class="changelog-list">${c.items.map(i=>`<li>${i}</li>`).join('')}</ul></div>`).join('');
   }
-  // Не показываем поверх онбординга новым пользователям — у них и так открыт экран приветствия
+}
+function openChangelog(){
+  renderChangelog();
+  openModal('changelogModal');
+}
+function checkChangelog(){
+  const seen=parseInt(localStorage.getItem('fp_changelog_seen')||'0');
+  if(seen>=CURRENT_VERSION)return;
+  renderChangelog();
+  // Don't show over onboarding for new users — they already see the welcome screen
   if(!localStorage.getItem('fp_onboarded')){
     localStorage.setItem('fp_changelog_seen',String(CURRENT_VERSION));
     return;
@@ -1616,7 +2045,7 @@ function registerSW(){
       newSW?.addEventListener('statechange',()=>{
         if(newSW.state==='installed'&&navigator.serviceWorker.controller){
           // Новая версия установлена — перезагружаем страницу, чтобы применить
-          toast('🔄 Новая версия приложения — обновляем...',3000);
+          toast(t('toast_appUpdate'),3000);
           setTimeout(()=>location.reload(),3000);
         }
       });
@@ -1633,7 +2062,7 @@ window.onload=()=>{
   captureReferralOnLoad();
   registerSW();
   setTheme(localStorage.getItem('fp_theme')||'violet');
-  applyLanguage(localStorage.getItem('fp_lang')||'ru');
+  applyLanguage(localStorage.getItem('fp_lang')||'en');
   myRoomCode=localStorage.getItem('fp_room_code')||null;
   load();loadVoicePrefs();
   buildExGrid();buildMoreExGrid();buildProgsGrid();buildChartTabs();buildEmojiGrid();buildThemeGrid();
@@ -1687,6 +2116,7 @@ window.onload=()=>{
   q('hubSettingsBtn')?.addEventListener('click',()=>{closeModal('menuHubModal');openModal('settingsModal');});
   q('hubFaqBtn')?.addEventListener('click',()=>{closeModal('menuHubModal');openModal('faqModalWrap');});
   q('hubFeedbackBtn')?.addEventListener('click',()=>{closeModal('menuHubModal');openModal('feedbackModal');});
+  q('hubWhatsNewBtn')?.addEventListener('click',()=>{closeModal('menuHubModal');openChangelog();});
 
   // Кнопки «← Назад» возвращают в меню-хаб вместо простого закрытия
   q('settingsBackBtn')?.addEventListener('click',()=>{closeModal('settingsModal');openModal('menuHubModal');});
@@ -1695,7 +2125,7 @@ window.onload=()=>{
 
   // Exercise presets
   document.querySelectorAll('.preset-btn').forEach(b=>{
-    b.addEventListener('click',()=>{goalReps=parseInt(b.dataset.g);q('goalInput').value=goalReps;document.querySelectorAll('.preset-btn').forEach(x=>x.classList.toggle('active',x===b));save();updProgress();toast(`🎯 Цель: ${goalReps}`);});
+    b.addEventListener('click',()=>{goalReps=parseInt(b.dataset.g);q('goalInput').value=goalReps;document.querySelectorAll('.preset-btn').forEach(x=>x.classList.toggle('active',x===b));save();updProgress();toast(t('toast_goal',{n:goalReps}));});
     if(parseInt(b.dataset.g)===goalReps)b.classList.add('active');
   });
   q('goalInput')?.addEventListener('input',e=>{const v=parseInt(e.target.value);if(v>0){goalReps=v;save();updProgress();}});
@@ -1703,7 +2133,7 @@ window.onload=()=>{
   // Mode
   q('modeCam')?.addEventListener('click',()=>{
     if(isRunning)stopAll();
-    currentMode='camera';q('video').style.display='';q('vidUp').style.display='none';q('fileUploadBtn').classList.remove('visible');q('modeCam').classList.add('active');q('modeVid').classList.remove('active');toast('📷 Камера');
+    currentMode='camera';q('video').style.display='';q('vidUp').style.display='none';q('fileUploadBtn').classList.remove('visible');q('modeCam').classList.add('active');q('modeVid').classList.remove('active');toast(t('toast_camMode'));
   });
   // Видео-режим временно отключён — анализ загруженных файлов работал нестабильно.
   // Кнопка остаётся в интерфейсе, но вместо переключения показывает модалку
@@ -1717,8 +2147,8 @@ window.onload=()=>{
   q('stopBtn')?.addEventListener('click',stopAll);
   q('voiceBtn')?.addEventListener('click',startVoice);
   q('hintReplayBtn')?.addEventListener('click',()=>{
-    const hint=CAMERA_VOICE_HINTS[currentEx];
-    if(hint)speak(hint,'!');else toast('Нет голосовой подсказки для этого упражнения');
+    const hint=getCamHint(currentEx);
+    if(hint)speak(hint,'!');else toast(t('toast_noHint'));
   });
   q('alwaysHintToggle')?.addEventListener('change',e=>{alwaysHintCamera=e.target.checked;localStorage.setItem('fp_always_hint',alwaysHintCamera?'1':'0');});
   q('demoClose')?.addEventListener('click',()=>{q('demoOv').style.display='none';clearTimeout(showDemo._timer);});
@@ -1727,12 +2157,12 @@ window.onload=()=>{
   q('hiitBtn')?.addEventListener('click',()=>{openTab('programs');q('tab-programs').scrollTop=0;});
   q('startHiitBtn')?.addEventListener('click',()=>{
     const w=parseInt(q('hiitWork')?.value||40),r=parseInt(q('hiitRest')?.value||20),n=parseInt(q('hiitRounds')?.value||8);
-    startHiit(w,r,n);openTab('train');toast(`⚡ HIIT: ${n} раундов`);
+    startHiit(w,r,n);openTab('train');toast(t('toast_hiitStart',{n}));
   });
 
   // Timer
   q('timerBtn')?.addEventListener('click',()=>{openTab('programs');});
-  q('startTimerBtn')?.addEventListener('click',()=>{const m=parseInt(q('timerMins')?.value||5);startWorkoutTimer(m);toast(`⏱️ Таймер: ${m} мин`);});
+  q('startTimerBtn')?.addEventListener('click',()=>{const m=parseInt(q('timerMins')?.value||5);startWorkoutTimer(m);toast(t('toast_timerStart',{m}));});
 
   // Programs
   q('startProgBtn')?.addEventListener('click',startProgStep);
@@ -1741,10 +2171,10 @@ window.onload=()=>{
 
   // Profile
   q('saveProfileBtn')?.addEventListener('click',()=>{
-    userName=q('nameInput')?.value||'Спортсмен';
+    userName=q('nameInput')?.value||'Athlete';
     userWeight=parseFloat(q('weightInput')?.value||70);
     userHeight=parseFloat(q('heightInput')?.value||170);
-    save();updateProfileUI();toast('💾 Профиль сохранён');
+    save();updateProfileUI();toast(t('toast_profileSaved'));
   });
   q('resetAllBtn')?.addEventListener('click',()=>{if(confirm('Сбросить весь прогресс?')){localStorage.clear();location.reload();}});
 
@@ -1757,16 +2187,16 @@ window.onload=()=>{
   // Settings (modal)
   q('sideSelect')?.addEventListener('change',e=>{prefSide=e.target.value;save();});
   q('sensRange')?.addEventListener('input',e=>{sens=parseFloat(e.target.value);q('sensVal').textContent=sens.toFixed(2);save();});
-  q('calibBtn')?.addEventListener('click',()=>{toast('Встаньте ровно 2 сек...');setTimeout(()=>{calibAngles[currentEx]=180;toast('✅ Калибровка выполнена');},2000);});
+  q('calibBtn')?.addEventListener('click',()=>{toast(t('toast_calibStart'));setTimeout(()=>{calibAngles[currentEx]=180;toast(t('toast_calibDone'));},2000);});
   document.querySelectorAll('.lang-btn').forEach(b=>b.addEventListener('click',()=>applyLanguage(b.dataset.lang)));
 
   // Voice coach settings
-  q('voiceToggle')?.addEventListener('change',e=>{voiceEnabled=e.target.checked;saveVoicePrefs();toast(voiceEnabled?'🔊 Голос включён':'🔇 Голос выключен');});
+  q('voiceToggle')?.addEventListener('change',e=>{voiceEnabled=e.target.checked;saveVoicePrefs();toast(t(voiceEnabled?'toast_voiceOn':'toast_voiceOff'));});
   q('voiceRateRange')?.addEventListener('input',e=>{voiceRate=parseFloat(e.target.value);q('voiceRateVal').textContent=voiceRate.toFixed(1)+'x';saveVoicePrefs();});
   q('voiceVolRange')?.addEventListener('input',e=>{voiceVolume=parseFloat(e.target.value);saveVoicePrefs();});
   q('testVoiceBtn')?.addEventListener('click',()=>{
-    if(!window.speechSynthesis){toast('❌ Браузер не поддерживает синтез речи');return;}
-    if(!voiceEnabled){toast('⚠️ Голос выключен — включите тумблер выше');return;}
+    if(!window.speechSynthesis){toast(t('toast_noSpeech'));return;}
+    if(!voiceEnabled){toast(t('toast_voiceDisabled'));return;}
     const voices=speechSynthesis.getVoices();
     const hasRu=voices.some(v=>v.lang.startsWith('ru'));
     if(voices.length&&!hasRu)toast('⚠️ Русский голос не найден на устройстве, попробую системный по умолчанию');
@@ -1813,7 +2243,7 @@ window.onload=()=>{
   q('sendFeedbackBtn')?.addEventListener('click',async()=>{
     const text=q('feedbackText')?.value.trim();
     if(!text){toast('Напишите хотя бы пару слов 🙂');return;}
-    if(!CLOUD_ENABLED){toast('⚠️ Облако не настроено, отзыв не отправлен');return;}
+    if(!CLOUD_ENABLED){toast(t('toast_noCloud'));return;}
     const btn=q('sendFeedbackBtn');
     if(btn){btn.disabled=true;btn.textContent='Отправка...';}
     const ok=await cloudSendFeedback({rating:feedbackRating,message:text},e=>toast('❌ Не получилось: '+e.message,4000));
@@ -1853,5 +2283,5 @@ window.onload=()=>{
   // Auto dark theme
   if(!localStorage.getItem('fp_theme')&&window.matchMedia('(prefers-color-scheme:dark)').matches)setTheme('midnight');
 
-  setEx('pushup');q('debugLine').textContent='Все системы готовы ✅';
+  setEx('pushup');q('debugLine').textContent=t('debugReady')+' ✅';
 };
