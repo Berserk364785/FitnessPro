@@ -83,6 +83,19 @@ function applyLanguage(lang){
   document.documentElement.lang=currentLang;
   localStorage.setItem('fp_lang',currentLang);
   document.querySelectorAll('.lang-btn').forEach(b=>b.classList.toggle('active',b.dataset.lang===currentLang));
+  // Update dynamic buttons that aren't covered by data-i18n
+  const isEn=currentLang==='en';
+  const startBtn=q('startBtn');if(startBtn&&!isRunning)startBtn.textContent=isEn?'🚀 START':'🚀 СТАРТ';
+  const resetBtn=q('resetBtn');if(resetBtn)resetBtn.textContent=isEn?'🔄 Reset':'🔄 Сброс';
+  const pauseBtn=q('pauseBtn');if(pauseBtn)pauseBtn.textContent=isPaused?(isEn?'▶️ Resume':'▶️ Продолжить'):(isEn?'⏸️ Pause':'⏸️ Пауза');
+  const stopBtn=q('stopBtn');if(stopBtn)stopBtn.textContent=isEn?'⏹️ Stop':'⏹️ Стоп';
+  const hiitBtn=q('hiitBtn');if(hiitBtn)hiitBtn.textContent=isEn?'⚡ HIIT':'⚡ HIIT';
+  const voiceBtn=q('voiceBtn');if(voiceBtn)voiceBtn.textContent=isEn?'🎙️ Voice':'🎙️ Голос';
+  const saveProfileBtn=q('saveProfileBtn');if(saveProfileBtn)saveProfileBtn.textContent=isEn?'💾 Save':'💾 Сохранить';
+  const resetAllBtn=q('resetAllBtn');if(resetAllBtn)resetAllBtn.textContent=isEn?'⚠️ Reset all progress':'⚠️ Сбросить весь прогресс';
+  const hubChangelogBtn=q('hubChangelogBtn');if(hubChangelogBtn)hubChangelogBtn.innerHTML=isEn?'✨ What\'s New <span class="menu-hub-sub">Update history v3</span>':'✨ Что нового <span class="menu-hub-sub">История обновлений v3</span>';
+  // Update speech language
+  window._speechLang=isEn?'en-US':'ru-RU';
 }
 
 // ============================================================
@@ -1162,7 +1175,7 @@ function tipShow(txt,type=''){
 function startVoice(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){toast('Голос не поддерживается');return;}
-  const r=new SR();r.lang='ru-RU';
+  const r=new SR();r.lang=window._speechLang||'ru-RU';
   r.onresult=e=>{
     const cmd=e.results[0][0].transcript.toLowerCase();toast(`🎙️ "${cmd}"`);
     if(cmd.includes('сброс'))resetReps();
@@ -1478,7 +1491,7 @@ function pumpSpeakQueue(){
   speakBusy=true;
   const {txt,urgency}=speakQueue.shift();
   const u=new SpeechSynthesisUtterance(txt);
-  u.lang='ru-RU';u.volume=voiceVolume;
+  u.lang=window._speechLang||'ru-RU';u.volume=voiceVolume;
   u.rate=urgency==='coach'?Math.max(.8,voiceRate-.1):voiceRate;
   u.pitch=voicePitch;
   let settled=false;
@@ -1549,8 +1562,17 @@ function toggleQuest(id){document.getElementById(id)?.classList.toggle('collapse
 // запись в начало CHANGELOG (новые сверху). Модалка покажется автоматически
 // один раз тем, у кого в localStorage записана более старая версия —
 // включая существующих пользователей, которые ещё не видели апдейт.
-const CURRENT_VERSION=2;
+const CURRENT_VERSION=3;
 const CHANGELOG=[
+  {v:3,date:'Июнь 2026',items:[
+    '👥 Командные челленджи с друзьями — создайте комнату и соревнуйтесь в своём кругу',
+    '📐 График прогресса по технике (угол) со временем — вкладка «Техника» в разделе Прогресс',
+    '⚠️ Предупреждение о перетренированности — приложение отслеживает нагрузку и предупреждает о рисках',
+    '🤕 Предупреждение о возможной боли или потере равновесия при технических ошибках',
+    '🌐 Английский режим интерфейса — переключите язык в Настройках (Language / EN)',
+    '🏆 Сравнение рекордов в уведомлении — видите, когда бьёте личный рекорд',
+    '✨ Кнопка «Что нового» в меню — смотрите историю обновлений в любой момент',
+  ]},
   {v:2,date:'Июнь 2026',items:[
     'Серия дней подряд с тренировкой 🔥',
     'Каждый день — новые случайные задания и вызов дня',
@@ -1587,13 +1609,20 @@ function applyFitnessLevelDefaults(level){
   localStorage.setItem('fp_fitness_level',level);
   save();
 }
-function checkChangelog(){
-  const seen=parseInt(localStorage.getItem('fp_changelog_seen')||'0');
-  if(seen>=CURRENT_VERSION)return;
+function populateChangelog(){
   const body=q('changelogBody');
   if(body){
     body.innerHTML=CHANGELOG.map(c=>`<div class="changelog-item"><div class="changelog-version">v${c.v} · ${c.date}</div><ul class="changelog-list">${c.items.map(i=>`<li>${i}</li>`).join('')}</ul></div>`).join('');
   }
+}
+function openChangelog(){
+  populateChangelog();
+  openModal('changelogModal');
+}
+function checkChangelog(){
+  const seen=parseInt(localStorage.getItem('fp_changelog_seen')||'0');
+  if(seen>=CURRENT_VERSION)return;
+  populateChangelog();
   // Не показываем поверх онбординга новым пользователям — у них и так открыт экран приветствия
   if(!localStorage.getItem('fp_onboarded')){
     localStorage.setItem('fp_changelog_seen',String(CURRENT_VERSION));
@@ -1687,6 +1716,7 @@ window.onload=()=>{
   q('hubSettingsBtn')?.addEventListener('click',()=>{closeModal('menuHubModal');openModal('settingsModal');});
   q('hubFaqBtn')?.addEventListener('click',()=>{closeModal('menuHubModal');openModal('faqModalWrap');});
   q('hubFeedbackBtn')?.addEventListener('click',()=>{closeModal('menuHubModal');openModal('feedbackModal');});
+  q('hubChangelogBtn')?.addEventListener('click',()=>{closeModal('menuHubModal');openChangelog();localStorage.setItem('fp_changelog_seen',String(CURRENT_VERSION));});
 
   // Кнопки «← Назад» возвращают в меню-хаб вместо простого закрытия
   q('settingsBackBtn')?.addEventListener('click',()=>{closeModal('settingsModal');openModal('menuHubModal');});
